@@ -1,7 +1,15 @@
 {
-    "retrieveExceptionDefMetaData": {},
+    "retrieveExceptionDefMetaData": {
+        "metadata_lines": [
+            { "text": "DB: EXCEPTION_DEF", "clickable": true, "data": { "table": "EXCEPTION_DEF" } }
+        ]
+    },
     "commonCreateExceptions": {},
     "createWtException": {
+        "metadata_lines": [
+            { "text": "Creates WT exceptions" },
+            { "text": "Log: WT_EXCEPTION", "clickable": true, "data": { "logType": "WT_EXCEPTION" } }
+        ],
         "children": [
             { "ref": "retrieveExceptionDefMetaData" },
             { "ref": "commonCreateExceptions" }

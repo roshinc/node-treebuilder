@@ -356,6 +356,106 @@ describe('TreeBuilder', () => {
         });
     });
 
+    describe('metadata_lines support', () => {
+        it('should preserve metadata_lines on function nodes', async () => {
+            builder.defineFunctions({
+                funcWithMetadata: {
+                    metadata_lines: [
+                        { text: 'log', clickable: true, data: { test: 'data' } },
+                        { text: 'other' }
+                    ]
+                }
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{ ref: 'funcWithMetadata' }]
+            };
+
+            const tree = await builder.build(app);
+            const func = tree.children[0];
+
+            assert.equal(func.name, 'funcWithMetadata');
+            assert.ok(func.metadata_lines, 'Should have metadata_lines');
+            assert.equal(func.metadata_lines.length, 2);
+            assert.equal(func.metadata_lines[0].text, 'log');
+            assert.equal(func.metadata_lines[0].clickable, true);
+            assert.deepEqual(func.metadata_lines[0].data, { test: 'data' });
+            assert.equal(func.metadata_lines[1].text, 'other');
+        });
+
+        it('should preserve metadata_lines on app nodes', async () => {
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                metadata_lines: [
+                    { text: 'App info', clickable: false }
+                ],
+                children: []
+            };
+
+            const tree = await builder.build(app);
+
+            assert.ok(tree.metadata_lines);
+            assert.equal(tree.metadata_lines[0].text, 'App info');
+        });
+
+        it('should preserve metadata_lines on ui-service-method nodes', async () => {
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [
+                    {
+                        name: 'ServiceGroup',
+                        type: 'ui-services',
+                        children: [
+                            {
+                                name: 'method1',
+                                type: 'ui-service-method',
+                                metadata_lines: [
+                                    { text: 'Method docs', clickable: true, data: { url: '/docs' } }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            };
+
+            const tree = await builder.build(app);
+            const method = tree.children[0].children[0];
+
+            assert.ok(method.metadata_lines);
+            assert.equal(method.metadata_lines[0].text, 'Method docs');
+            assert.equal(method.metadata_lines[0].clickable, true);
+        });
+
+        it('should preserve metadata_lines with nested function refs', async () => {
+            builder.defineFunctions({
+                child: {
+                    metadata_lines: [{ text: 'child info' }]
+                },
+                parent: {
+                    metadata_lines: [{ text: 'parent info' }],
+                    children: [ref('child')]
+                }
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{ ref: 'parent' }]
+            };
+
+            const tree = await builder.build(app);
+            const parent = tree.children[0];
+            const child = parent.children[0];
+
+            assert.equal(parent.metadata_lines[0].text, 'parent info');
+            assert.equal(child.metadata_lines[0].text, 'child info');
+        });
+    });
+
     describe('multiple builds', () => {
         it('should clear cache between builds', async () => {
             builder.defineFunctions({
