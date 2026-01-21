@@ -1,0 +1,203 @@
+{
+    "retrieveExceptionDefMetaData": {},
+    "commonCreateExceptions": {},
+    "createWtException": {
+        "children": [
+            { "ref": "retrieveExceptionDefMetaData" },
+            { "ref": "commonCreateExceptions" }
+        ]
+    },
+    "retrieveWTPendFiling": {},
+    "expireWTPendFiling": {},
+    "insertWTPendFilingWithExcep": {
+        "children": [
+            { "ref": "createWtException" }
+        ]
+    },
+    "retrieveWTPendFilingByTPId": {},
+    "validateProfile": {},
+    "validateWTTaxpayerInformation": {
+        "children": [
+            { "ref": "validateProfile" }
+        ]
+    },
+    "processWTPayments": {
+        "children": [
+            { "ref": "validateWTTaxpayerInformation" }
+        ]
+    },
+    "retrieveUnEmpInsByKeys": {},
+    "insertEmployee": {},
+    "retriveEmployeeDtls": {},
+    "updateWTEmployee": {},
+    "getWTEmployeeWageTypeCount": {},
+    "applyWTPreviewEmployeeChanges": {},
+    "getTotalBadSsnCount": {},
+    "getAllDistributionAmounts": {},
+    "getBadSsnDetailsByDln": {},
+    "WTWRESUMSearch": {},
+    "getNextEmpRowId": {
+        "children": [
+            { "ref": "isWTReturnFilingExists" },
+            { "ref": "retrieveWTRtnLiability" },
+            { "ref": "retrieveWTPendFilingByTPId" }
+        ]
+    },
+    "getWageCount": {
+        "children": [
+            { "ref": "isWTReturnFilingExists" },
+            { "ref": "retrieveWTRtnLiability" },
+            { "ref": "retrieveWTPendFilingByTPId" }
+        ]
+    },
+    "getTotalEmployeeCount": {},
+    "retrievePrevEmployee": {},
+    "retrievePrevEmpCRUDTotal": {},
+    "wageRetrieveEmployeeDetails": {
+        "children": [
+            { "ref": "retrieveWTPendFiling" }
+        ]
+    },
+    "wageRetrieveByEmpName": {
+        "children": [
+            { "ref": "retrieveWTPendFiling" }
+        ]
+    },
+    "retrieveWageDetailsForDOL": {
+        "children": [
+            { "ref": "retrieveWTPendFiling" }
+        ]
+    },
+    "retrieveWageDetailsForPIT": {
+        "children": [
+            { "ref": "getAllWTReturnFilings" }
+        ]
+    },
+    "isWTReturnFilingExists": {},
+    "retrieveWTRtnLiability": {},
+    "getAllWTReturnFilings": {},
+    "insertFEDEmployer": {},
+    "retrieveFEDEmployer": {},
+    "updateFEDEmployer": {},
+    "insertFEDEmployee": {},
+    "updateFEDEmployee": {},
+    "retriveFEDEmployee": {},
+    "retrieveLPDetailsLite": {},
+    "retrieveEmployerDetailsByDLN": {},
+    "retrieveWTReturnFilingByDLN": {},
+    "getWTReturnFilingDetailsforOLS": {},
+    "retrieveAllWTReturnStatus": {},
+    "retrievePaymentData": {},
+    "retrieveExceptionDetails": {
+        "children": [
+            { "ref": "retrievePrvwFiling" },
+            { "ref": "retrieveWtPayroll" },
+            { "ref": "retrieveWTPreviewFiling" }
+        ]
+    },
+    "retrieveExceptionPriority": {
+        "children": [
+            { "ref": "retrievePrvwFiling" },
+            { "ref": "retrieveWtPayroll" },
+            { "ref": "retrieveWTPreviewFiling" }
+        ]
+    },
+    "commonExpireExceptions": {
+        "children": [
+            {
+                "topicName": "exceptionsExpireEvent",
+                "topicPublish": true
+            }
+        ]
+    },
+    "commonCreateExpireExceptions": {
+        "children": [
+            {
+                "topicName": "exceptionsCreateEvent",
+                "topicPublish": true
+            }
+        ]
+    },
+    "retrieveWTPreviewFiling": {},
+    "retrieveWtPayroll": {},
+    "retrievePrvwFiling": {},
+    "NDP600JExceptionsCreate": {},
+    "NDP600JRetrieveExcps": {},
+    "retrieveProcessDefMetaData": {},
+    "NDP600JExpireExcps": {},
+    "insertSubmitter": {},
+    "retrieveSubControlInfo": {},
+    "updateSubControlDsn": {},
+    "retrieveSubmissionInfoByDLN": {},
+    "updateSubmitter": {},
+    "retrieveWTSubmissionCtrlDtls": {},
+    "updateNimbBatch": {},
+    "retrieveSubmsnByFileTracker": {},
+    "retrieveSubmissionInfoByEIN": {},
+    "retrieveSubmissionInfoByEINId": {},
+    "insertFileInfo": {},
+    "retrieveFileInfo": {},
+    "updateFileInfo": {},
+    "retrieveWTFileTrackDtlsByDLNS": {},
+    "checkIfDLNExists": {},
+    "checkIfBatchDlnProcessed": {},
+    "insertErrorStats": {},
+    "retrieveAllErrors": {},
+    "retrieveErrorDetailsByFileName": {},
+    "retrieveWTErrorDtlsByFileName": {},
+    "insertWTErrorStatsList": {},
+    "updateFilingStatsAsynch": {},
+    "retrieveWTTestErrorByIDOrDLN": {},
+    "retrieveWTTestErrorDtlsByTPID": {},
+    "insertSubDlnTracker": {},
+    "retrieveSubDlnTracker": {},
+    "WTgetSubmittionDLNList": {},
+    "retrieveSubDlnInfo": {},
+    "processWebFiling": {},
+    "wtSubmit": {},
+    "processWPWFFiling": {},
+    "processWPULFiling": {},
+    "processWCWFFiling": {},
+    "processWCULFiling": {},
+    "mapWTNYS1AdjustRecd": {},
+    "wtnys1jbatchProcessIndvRcdMpr": {},
+    "wtnys1jPromptTaxAchPaymntMpr": {},
+    "wtnys1jwebBulkUploadIndvRcdMpr": {},
+    "mapWTNYS1WebBulkUpload": {},
+    "mapWTNYS1PromptTaxACHPymt": {},
+    "mapWTNYS1JPMCRecord": {},
+    "wtnys45WebBulkUploadMapper": {},
+    "WTNYS45UploadRecordMapper": {},
+    "WTNYS45WebRecordMapper": {},
+    "WTNYS45BatchProcessRecMapper": {},
+    "FSETRecordMapper": {},
+    "wtnys45FsetRecordMapper": {},
+    "wtnys45JpmcRecordMapper": {},
+    "mapWTNYS45WebBulkUpload": {},
+    "mapWTNYS45JPMCRecord": {},
+    "getSeqNmbrNys45": {},
+    "getDSNNys45": {},
+    "mapWTNYS45FedFiler1099": {},
+    "mapWTNYS45FedFilerW2Rec": {},
+    "mapWTNYS45AdjustBO": {},
+    "processWTPromptTaxAdjustments": {},
+    "processWTPromptTaxAdj": {},
+    "wtfeatjPromptTaxACHPayments": {},
+    "wtfeatjUIPaymentResponse": {},
+    "processWTPromptTaxACHPayments": {},
+    "processWTUIPaymentResponse": {},
+    "processWTUIAdjustments": {},
+    "processWTPromptTaxACHAdj": {},
+    "proceesFSETUIAdjust": {},
+    "proceesFSETUIAdjustments": {},
+    "processTaxACHPaymentBatch": {},
+    "verifyNYS1FinishedProcessing": {},
+    "verifyNYS45FinishedProcessing": {},
+    "getSequence": {},
+    "fwecfilejSaveForm": {},
+    "searchFormsByPrimaryIntTpId": {},
+    "retrieveVoucher": {},
+    "hasActiveWtPayroll": {},
+    "hasPreExistingWTFiling": {},
+    "searchFormsByDocLctrNmbr": {}
+}
