@@ -116,7 +116,7 @@ Each app is stored as a separate JSON file:
 |------|-------------|-------------|
 | Sync | `{ "ref": "funcName" }` | Direct function reference |
 | Async | `{ "ref": "funcName", "async": true, "queueName": "Q.NAME" }` | Wrapped in timer/queue node |
-| Topic | `{ "topicName": "event", "topicPublish": true }` | Publish to topic |
+| Topic | `{ "topicName": "event", "topicPublish": true, "queueName": "Q.NAME" }` | Publish to topic (queueName optional) |
 
 ## Project Structure
 
