@@ -1,5 +1,5 @@
-
-import { ref, asyncRef } from '../helpers/tree-builder.js'
+
+import { ref, asyncRef } from './tree-builder.js'
 
 const applicationPool = {};
 
