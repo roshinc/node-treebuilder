@@ -1,0 +1,16 @@
+{
+    "name": "nims-exceptions-app",
+    "type": "app",
+    "children": [
+        { "ref": "retrieveExceptionDetails" },
+        { "ref": "retrieveExceptionDefMetaData" },
+        { "ref": "commonExpireExceptions" },
+        { "ref": "commonCreateExceptions" },
+        { "ref": "commonCreateExpireExceptions" },
+        { "ref": "retrieveExceptionPriority" },
+        { "ref": "NDP600JExceptionsCreate" },
+        { "ref": "NDP600JRetrieveExcps" },
+        { "ref": "retrieveProcessDefMetaData" },
+        { "ref": "NDP600JExpireExcps" }
+    ]
+}

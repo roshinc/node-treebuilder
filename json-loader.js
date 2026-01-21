@@ -10,9 +10,9 @@
  * - Topic publish:        { "topicName": "eventName", "topicPublish": true }
  */
 
-import { readFile } from 'fs/promises';
+import { readFile, readdir } from 'fs/promises';
 import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+import { dirname, join, basename } from 'path';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -63,13 +63,24 @@ async function loadJson(source, options = {}) {
 }
 
 /**
- * Load application pool configuration
- * @param {string} source - File path or URL to appPool.json
- * @param {object} options - Fetch options for URL sources
- * @returns {Promise<object>} Application pool object
+ * Load a single application configuration by name from a directory
+ * @param {string} appName - Application name (e.g., "nims-wt-pend-process-app")
+ * @param {string} appsDir - Directory containing individual app JSON files
+ * @returns {Promise<object>} Application configuration object
  */
-async function loadAppPool(source, options = {}) {
-    return loadJson(source, options);
+async function loadApp(appName, appsDir) {
+    const filePath = join(appsDir, `${appName}.json`);
+    return loadFromFile(filePath);
+}
+
+/**
+ * Load a single application configuration from a URL
+ * @param {string} url - URL to fetch the app config from
+ * @param {object} options - Fetch options (headers, etc.)
+ * @returns {Promise<object>} Application configuration object
+ */
+async function loadAppFromUrl(url, options = {}) {
+    return loadFromUrl(url, options);
 }
 
 /**
@@ -83,55 +94,55 @@ async function loadFunctionPool(source, options = {}) {
 }
 
 /**
- * Load both pools from a config directory
- * @param {string} configDir - Directory containing appPool.json and functionPool.json
- * @returns {Promise<{appPool: object, functionPool: object}>}
+ * Load function pool from the default config directory
+ * @param {string} configDir - Config directory path
+ * @returns {Promise<object>} Function pool object
  */
-async function loadPoolsFromDirectory(configDir) {
-    const [appPool, functionPool] = await Promise.all([
-        loadFromFile(join(configDir, 'appPool.json')),
-        loadFromFile(join(configDir, 'functionPool.json'))
-    ]);
-
-    return { appPool, functionPool };
+async function loadFunctionPoolFromDirectory(configDir) {
+    return loadFromFile(join(configDir, 'functionPool.json'));
 }
 
 /**
- * Load pools from REST endpoints
- * @param {string} appPoolUrl - URL for application pool
- * @param {string} functionPoolUrl - URL for function pool
- * @param {object} options - Fetch options
- * @returns {Promise<{appPool: object, functionPool: object}>}
+ * List all available app names in a directory
+ * @param {string} appsDir - Directory containing app JSON files
+ * @returns {Promise<string[]>} Array of app names (without .json extension)
  */
-async function loadPoolsFromApi(appPoolUrl, functionPoolUrl, options = {}) {
-    const [appPool, functionPool] = await Promise.all([
-        loadFromUrl(appPoolUrl, options),
-        loadFromUrl(functionPoolUrl, options)
-    ]);
-
-    return { appPool, functionPool };
+async function listAvailableApps(appsDir) {
+    const files = await readdir(appsDir);
+    return files
+        .filter(f => f.endsWith('.json'))
+        .map(f => basename(f, '.json'));
 }
 
 /**
- * Validate that a pool configuration has the expected structure
- * @param {object} pool - Pool configuration to validate
- * @param {string} poolType - 'app' or 'function' for error messages
+ * Validate that an app configuration has the expected structure
+ * @param {object} app - App configuration to validate
  * @returns {boolean} True if valid
  * @throws {Error} If validation fails
  */
-function validatePool(pool, poolType) {
+function validateApp(app) {
+    if (!app || typeof app !== 'object') {
+        throw new Error('Invalid app config: must be an object');
+    }
+    if (!app.name) {
+        throw new Error('Invalid app config: missing required "name" property');
+    }
+    if (!app.type) {
+        throw new Error(`Invalid app "${app.name}": missing required "type" property`);
+    }
+    return true;
+}
+
+/**
+ * Validate that a function pool configuration has the expected structure
+ * @param {object} pool - Function pool configuration to validate
+ * @returns {boolean} True if valid
+ * @throws {Error} If validation fails
+ */
+function validateFunctionPool(pool) {
     if (!pool || typeof pool !== 'object') {
-        throw new Error(`Invalid ${poolType} pool: must be an object`);
+        throw new Error('Invalid function pool: must be an object');
     }
-
-    if (poolType === 'app') {
-        for (const [name, app] of Object.entries(pool)) {
-            if (!app.name || !app.type) {
-                throw new Error(`Invalid app "${name}": missing required 'name' or 'type' property`);
-            }
-        }
-    }
-
     return true;
 }
 
@@ -143,14 +154,25 @@ function getDefaultConfigDir() {
     return join(__dirname, 'config');
 }
 
+/**
+ * Get the default apps directory path
+ * @returns {string}
+ */
+function getDefaultAppsDir() {
+    return join(__dirname, 'config', 'apps');
+}
+
 export {
     loadJson,
     loadFromFile,
     loadFromUrl,
-    loadAppPool,
+    loadApp,
+    loadAppFromUrl,
     loadFunctionPool,
-    loadPoolsFromDirectory,
-    loadPoolsFromApi,
-    validatePool,
-    getDefaultConfigDir
+    loadFunctionPoolFromDirectory,
+    listAvailableApps,
+    validateApp,
+    validateFunctionPool,
+    getDefaultConfigDir,
+    getDefaultAppsDir
 };

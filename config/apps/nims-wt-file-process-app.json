@@ -1,0 +1,159 @@
+{
+    "name": "nims-wt-file-process-app",
+    "type": "app",
+    "children": [
+        { "ref": "insertSubmitter" },
+        { "ref": "retrieveSubControlInfo" },
+        { "ref": "updateSubControlDsn" },
+        { "ref": "retrieveSubmissionInfoByDLN" },
+        { "ref": "updateSubmitter" },
+        { "ref": "retrieveWTSubmissionCtrlDtls" },
+        { "ref": "updateNimbBatch" },
+        { "ref": "retrieveSubmsnByFileTracker" },
+        { "ref": "retrieveSubmissionInfoByEIN" },
+        { "ref": "retrieveSubmissionInfoByEINId" },
+        { "ref": "insertFileInfo" },
+        { "ref": "retrieveFileInfo" },
+        { "ref": "updateFileInfo" },
+        { "ref": "retrieveWTFileTrackDtlsByDLNS" },
+        { "ref": "checkIfDLNExists" },
+        { "ref": "checkIfBatchDlnProcessed" },
+        { "ref": "insertErrorStats" },
+        { "ref": "retrieveAllErrors" },
+        { "ref": "retrieveErrorDetailsByFileName" },
+        { "ref": "retrieveWTErrorDtlsByFileName" },
+        { "ref": "insertWTErrorStatsList" },
+        { "ref": "updateFilingStatsAsynch" },
+        { "ref": "retrieveWTTestErrorByIDOrDLN" },
+        { "ref": "retrieveWTTestErrorDtlsByTPID" },
+        { "ref": "insertSubDlnTracker" },
+        { "ref": "retrieveSubDlnTracker" },
+        { "ref": "WTgetSubmittionDLNList" },
+        { "ref": "retrieveSubDlnInfo" },
+        { "ref": "processWebFiling" },
+        { "ref": "wtSubmit" },
+        { "ref": "processWPWFFiling" },
+        { "ref": "processWPULFiling" },
+        { "ref": "processWCWFFiling" },
+        { "ref": "processWCULFiling" },
+        { "ref": "mapWTNYS1AdjustRecd" },
+        { "ref": "wtnys1jbatchProcessIndvRcdMpr" },
+        { "ref": "wtnys1jPromptTaxAchPaymntMpr" },
+        { "ref": "wtnys1jwebBulkUploadIndvRcdMpr" },
+        { "ref": "mapWTNYS1WebBulkUpload" },
+        { "ref": "mapWTNYS1PromptTaxACHPymt" },
+        { "ref": "mapWTNYS1JPMCRecord" },
+        { "ref": "wtnys45WebBulkUploadMapper" },
+        { "ref": "WTNYS45UploadRecordMapper" },
+        { "ref": "WTNYS45WebRecordMapper" },
+        { "ref": "WTNYS45BatchProcessRecMapper" },
+        { "ref": "FSETRecordMapper" },
+        { "ref": "wtnys45FsetRecordMapper" },
+        { "ref": "wtnys45JpmcRecordMapper" },
+        { "ref": "mapWTNYS45WebBulkUpload" },
+        { "ref": "mapWTNYS45JPMCRecord" },
+        { "ref": "getSeqNmbrNys45" },
+        { "ref": "getDSNNys45" },
+        { "ref": "mapWTNYS45FedFiler1099" },
+        { "ref": "mapWTNYS45FedFilerW2Rec" },
+        { "ref": "mapWTNYS45AdjustBO" },
+        { "ref": "processWTPromptTaxAdjustments" },
+        { "ref": "processWTPromptTaxAdj" },
+        { "ref": "wtfeatjPromptTaxACHPayments" },
+        { "ref": "wtfeatjUIPaymentResponse" },
+        { "ref": "processWTPromptTaxACHPayments" },
+        { "ref": "processWTUIPaymentResponse" },
+        { "ref": "processWTUIAdjustments" },
+        { "ref": "processWTPromptTaxACHAdj" },
+        { "ref": "proceesFSETUIAdjust" },
+        { "ref": "proceesFSETUIAdjustments" },
+        { "ref": "processTaxACHPaymentBatch" },
+        { "ref": "verifyNYS1FinishedProcessing" },
+        { "ref": "verifyNYS45FinishedProcessing" },
+        {
+            "name": "WT0008J",
+            "type": "ui-services",
+            "children": [
+                {
+                    "name": "getSequenceNmbr",
+                    "type": "ui-service-method",
+                    "children": [
+                        { "ref": "getSequence" }
+                    ]
+                },
+                {
+                    "name": "saveForm",
+                    "type": "ui-service-method",
+                    "children": [
+                        { "ref": "fwecfilejSaveForm" }
+                    ]
+                },
+                {
+                    "name": "searchFormsByPrimaryInternalTaxpayerId",
+                    "type": "ui-service-method",
+                    "children": [
+                        { "ref": "searchFormsByPrimaryIntTpId" }
+                    ]
+                },
+                {
+                    "name": "retrieveVoucher",
+                    "type": "ui-service-method",
+                    "children": [
+                        { "ref": "retrieveVoucher" }
+                    ]
+                },
+                {
+                    "name": "hasActiveVoucher",
+                    "type": "ui-service-method",
+                    "children": [
+                        { "ref": "hasActiveWtPayroll" }
+                    ]
+                },
+                {
+                    "name": "hasPreExistingWTFiling",
+                    "type": "ui-service-method",
+                    "children": [
+                        { "ref": "hasPreExistingWTFiling" }
+                    ]
+                },
+                {
+                    "name": "searchFormsByDocumentLocatorNumber",
+                    "type": "ui-service-method",
+                    "children": [
+                        { "ref": "searchFormsByDocLctrNmbr" }
+                    ]
+                },
+                { "name": "retrieveAccts", "type": "ui-service-method" },
+                { "name": "getPayrollPeriodDueDate", "type": "ui-service-method" },
+                { "name": "getAllPaymentsForWeb", "type": "ui-service-method" },
+                { "name": "retrieveLiablityPeriods", "type": "ui-service-method" },
+                { "name": "retrieveNYS1LiablityPeriods", "type": "ui-service-method" },
+                { "name": "validateProfile", "type": "ui-service-method" },
+                { "name": "retrieveProfile", "type": "ui-service-method" },
+                { "name": "retrieveLPByQuarter", "type": "ui-service-method" },
+                { "name": "getNYS45UIRate", "type": "ui-service-method" },
+                { "name": "getNYS45PaymentDueDate", "type": "ui-service-method" },
+                { "name": "retrieveOrigNYS1Data", "type": "ui-service-method" },
+                { "name": "getWTPaymentsForWeb", "type": "ui-service-method" },
+                { "name": "removeSavedAcct", "type": "ui-service-method" }
+            ]
+        },
+        {
+            "name": "WT0028J",
+            "type": "ui-services",
+            "children": [
+                {
+                    "name": "retrieveWageDetailsForDOL",
+                    "type": "ui-service-method",
+                    "children": [
+                        { "ref": "retrieveWTPendFiling" },
+                        { "ref": "retrievePaymentData" },
+                        { "ref": "retrieveWTReturnFilingByDLN" },
+                        { "ref": "retrieveWTPendFiling" },
+                        { "ref": "getAllWTReturnFilings" }
+                    ]
+                }
+            ]
+        }
+    ]
+}

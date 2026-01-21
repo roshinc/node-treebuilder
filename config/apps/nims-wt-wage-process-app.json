@@ -1,0 +1,70 @@
+{
+    "name": "nims-wt-wage-process-app",
+    "type": "app",
+    "children": [
+        { "ref": "insertEmployee" },
+        { "ref": "retriveEmployeeDtls" },
+        { "ref": "updateWTEmployee" },
+        { "ref": "getWTEmployeeWageTypeCount" },
+        { "ref": "applyWTPreviewEmployeeChanges" },
+        { "ref": "getTotalBadSsnCount" },
+        { "ref": "getAllDistributionAmounts" },
+        { "ref": "getBadSsnDetailsByDln" },
+        { "ref": "WTWRESUMSearch" },
+        { "ref": "getNextEmpRowId" },
+        { "ref": "getWageCount" },
+        { "ref": "getTotalEmployeeCount" },
+        { "ref": "retrievePrevEmployee" },
+        { "ref": "retrievePrevEmpCRUDTotal" },
+        { "ref": "wageRetrieveEmployeeDetails" },
+        { "ref": "wageRetrieveByEmpName" },
+        { "ref": "retrieveWageDetailsForDOL" },
+        { "ref": "retrieveWageDetailsForPIT" },
+        { "ref": "insertFEDEmployer" },
+        { "ref": "retrieveFEDEmployer" },
+        { "ref": "updateFEDEmployer" },
+        { "ref": "insertFEDEmployee" },
+        { "ref": "updateFEDEmployee" },
+        { "ref": "retriveFEDEmployee" },
+        {
+            "name": "WT4545J",
+            "type": "ui-services",
+            "children": [
+                {
+                    "name": "retrieveData",
+                    "type": "ui-service-method",
+                    "children": [
+                        { "ref": "retrieveLPDetailsLite" },
+                        { "ref": "retrieveEmployerDetailsByDLN" },
+                        { "ref": "retrieveWTReturnFilingByDLN" },
+                        { "ref": "retrieveAllWTReturnStatus" }
+                    ]
+                },
+                { "name": "retrieveEmployees", "type": "ui-service-method" },
+                { "name": "retrievePrevEmployees", "type": "ui-service-method" },
+                { "name": "searchEmployees", "type": "ui-service-method" },
+                { "name": "deletePreviewEmployee", "type": "ui-service-method" },
+                { "name": "insertPreviewEmployee", "type": "ui-service-method" },
+                { "name": "retrieveNextRowId", "type": "ui-service-method" },
+                { "name": "searchByEmployeeId", "type": "ui-service-method" }
+            ]
+        },
+        {
+            "name": "WTWAGEUIJ",
+            "type": "ui-services",
+            "children": [
+                {
+                    "name": "retrieveWageDetailsForDOL",
+                    "type": "ui-service-method",
+                    "children": [
+                        { "ref": "retrieveWTPendFiling" },
+                        { "ref": "retrievePaymentData" },
+                        { "ref": "retrieveWTReturnFilingByDLN" },
+                        { "ref": "retrieveWTPendFiling" },
+                        { "ref": "getAllWTReturnFilings" }
+                    ]
+                }
+            ]
+        }
+    ]
+}
