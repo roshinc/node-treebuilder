@@ -1,0 +1,37 @@
+{
+    "name": "nims-wt-pend-process-app",
+    "type": "app",
+    "children": [
+        { "ref": "retrieveWTPendFiling" },
+        { "ref": "expireWTPendFiling" },
+        { "ref": "insertWTPendFilingWithExcep" },
+        { "ref": "retrieveWTPendFilingByTPId" },
+        {
+            "name": "WT9000J",
+            "type": "ui-services",
+            "children": [
+                {
+                    "name": "resolvePend",
+                    "type": "ui-service-method",
+                    "children": [
+                        { "ref": "retrieveWTPendFiling" },
+                        { "ref": "expireWTPendFiling" },
+                        {
+                            "ref": "processWTPayments",
+                            "async": true,
+                            "queueName": "RPWTWR.PFQ"
+                        }
+                    ]
+                },
+                {
+                    "name": "getWtPendFilingData",
+                    "type": "ui-service-method",
+                    "children": [
+                        { "ref": "retrieveUnEmpInsByKeys" },
+                        { "ref": "retrieveWTPendFiling" }
+                    ]
+                }
+            ]
+        }
+    ]
+}
