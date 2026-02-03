@@ -86,16 +86,26 @@ class TreeBuilder {
       return leaf;
     }
 
-    const { children, ...props } = def;
+    const { children, app, ...props } = def;
     const newVisited = new Set(visited);
     newVisited.add(name);
     const newPath = [...path, name];
+
+    // Transform 'app' field into a metadata_line entry
+    let finalProps = { ...props };
+    if (app) {
+      const appMetadataLine = { text: app, clickable: false };
+      finalProps.metadata_lines = [
+        appMetadataLine,
+        ...(props.metadata_lines || [])
+      ];
+    }
 
     // Create node (add to cache BEFORE resolving children to handle self-reference)
     const resolved = {
       name,
       type: 'function',
-      ...props
+      ...finalProps
     };
 
     // Placeholder in cache to handle direct self-reference

@@ -456,6 +456,135 @@ describe('TreeBuilder', () => {
         });
     });
 
+    describe('app field support', () => {
+        it('should transform app field into metadata_line with clickable false', async () => {
+            builder.defineFunctions({
+                funcWithApp: {
+                    app: 'MyApp',
+                    children: []
+                }
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{ ref: 'funcWithApp' }]
+            };
+
+            const tree = await builder.build(app);
+            const func = tree.children[0];
+
+            assert.ok(func.metadata_lines, 'Should have metadata_lines');
+            assert.equal(func.metadata_lines.length, 1);
+            assert.equal(func.metadata_lines[0].text, 'MyApp');
+            assert.equal(func.metadata_lines[0].clickable, false);
+            assert.equal(func.metadata_lines[0].data, undefined);
+        });
+
+        it('should not include app field in output node', async () => {
+            builder.defineFunctions({
+                funcWithApp: {
+                    app: 'MyApp'
+                }
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{ ref: 'funcWithApp' }]
+            };
+
+            const tree = await builder.build(app);
+            const func = tree.children[0];
+
+            assert.equal(func.app, undefined, 'app field should not be in output');
+        });
+
+        it('should prepend app metadata_line before existing metadata_lines', async () => {
+            builder.defineFunctions({
+                funcWithAppAndMetadata: {
+                    app: 'MyApp',
+                    metadata_lines: [
+                        { text: 'existing info', clickable: true, data: { key: 'value' } }
+                    ],
+                    children: []
+                }
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{ ref: 'funcWithAppAndMetadata' }]
+            };
+
+            const tree = await builder.build(app);
+            const func = tree.children[0];
+
+            assert.equal(func.metadata_lines.length, 2);
+            // App metadata_line should be first
+            assert.equal(func.metadata_lines[0].text, 'MyApp');
+            assert.equal(func.metadata_lines[0].clickable, false);
+            assert.equal(func.metadata_lines[0].data, undefined);
+            // Existing metadata_line should be preserved
+            assert.equal(func.metadata_lines[1].text, 'existing info');
+            assert.equal(func.metadata_lines[1].clickable, true);
+            assert.deepEqual(func.metadata_lines[1].data, { key: 'value' });
+        });
+
+        it('should handle app field with children references', async () => {
+            builder.defineFunctions({
+                childFunc1: {},
+                asyncFunc: {},
+                parentWithApp: {
+                    app: 'MyApp',
+                    children: [
+                        { ref: 'childFunc1' },
+                        { ref: 'asyncFunc', async: true, queueName: 'QUEUE.NAME' }
+                    ]
+                }
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{ ref: 'parentWithApp' }]
+            };
+
+            const tree = await builder.build(app);
+            const func = tree.children[0];
+
+            assert.equal(func.name, 'parentWithApp');
+            assert.ok(func.metadata_lines);
+            assert.equal(func.metadata_lines[0].text, 'MyApp');
+            assert.equal(func.metadata_lines[0].clickable, false);
+            // Verify children are resolved
+            assert.equal(func.children.length, 2);
+            assert.equal(func.children[0].name, 'childFunc1');
+            assert.equal(func.children[1].type, 'timer');
+            assert.equal(func.children[1].name, 'QUEUE.NAME');
+        });
+
+        it('should handle function without app field normally', async () => {
+            builder.defineFunctions({
+                funcWithoutApp: {
+                    metadata_lines: [{ text: 'some info' }]
+                }
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{ ref: 'funcWithoutApp' }]
+            };
+
+            const tree = await builder.build(app);
+            const func = tree.children[0];
+
+            assert.equal(func.metadata_lines.length, 1);
+            assert.equal(func.metadata_lines[0].text, 'some info');
+        });
+    });
+
     describe('multiple builds', () => {
         it('should clear cache between builds', async () => {
             builder.defineFunctions({
