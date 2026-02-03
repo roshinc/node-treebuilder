@@ -116,7 +116,53 @@ Each app is stored as a separate JSON file:
 |------|-------------|-------------|
 | Sync | `{ "ref": "funcName" }` | Direct function reference |
 | Async | `{ "ref": "funcName", "async": true, "queueName": "Q.NAME" }` | Wrapped in timer/queue node |
-| Topic | `{ "topicName": "event", "topicPublish": true }` | Publish to topic |
+| Topic | `{ "topicName": "event", "topicPublish": true, "queueName": "Q.NAME" }` | Publish to topic (queueName optional) |
+
+### Metadata Lines
+
+Any node can include `metadata_lines` - an array of metadata objects that will be preserved in the output tree. This is useful for attaching additional display information to nodes.
+
+```json
+{
+    "name": "myFunction",
+    "type": "function",
+    "metadata_lines": [
+        {
+            "text": "Log: MY_LOG",
+            "clickable": true,
+            "data": {
+                "logType": "MY_LOG",
+                "customField": "value"
+            }
+        },
+        {
+            "text": "Just a label"
+        }
+    ]
+}
+```
+
+**Properties:**
+| Property | Required | Description |
+|----------|----------|-------------|
+| `text` | Yes | Display text for the metadata line |
+| `clickable` | No | If `true`, the line is rendered as a clickable link |
+| `data` | No | Arbitrary data object attached to this metadata line |
+
+**Example in function pool:**
+```json
+{
+    "createWtException": {
+        "metadata_lines": [
+            { "text": "Creates WT exceptions" },
+            { "text": "Log: WT_EXCEPTION", "clickable": true, "data": { "logType": "WT_EXCEPTION" } }
+        ],
+        "children": [
+            { "ref": "retrieveExceptionDefMetaData" }
+        ]
+    }
+}
+```
 
 ## Project Structure
 
@@ -193,7 +239,7 @@ node example-json.js
 npm test
 ```
 
-Runs 55 unit tests covering TreeBuilder and JSON loader functionality.
+Runs 59 unit tests covering TreeBuilder and JSON loader functionality.
 
 ## License
 
