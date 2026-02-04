@@ -102,6 +102,13 @@ Each app is stored as a separate JSON file:
             { "ref": "leafFunction" }
         ]
     },
+    "functionWithQueueName": {
+        "app": "MyApp",
+        "queueName": "MY.DEFAULT.QUEUE",
+        "children": [
+            { "ref": "leafFunction" }
+        ]
+    },
     "publisherFunction": {
         "children": [
             { "topicName": "eventName", "topicPublish": true }
@@ -110,6 +117,17 @@ Each app is stored as a separate JSON file:
 }
 ```
 
+#### Function Pool Properties
+
+| Property | Description |
+|----------|-------------|
+| `app` | Application name, transformed into a metadata_line |
+| `queueName` | Default queue name for async references to this function |
+| `children` | Array of child references (sync, async, or topic) |
+| `metadata_lines` | Array of metadata objects for display |
+
+**Note:** The `queueName` property is used as a default when the function is referenced asynchronously. It is passed to the async resolver and used as a fallback if neither the resolver nor the inline reference specifies a queue name.
+
 ### Reference Types
 
 | Type | JSON Format | Description |
@@ -117,6 +135,42 @@ Each app is stored as a separate JSON file:
 | Sync | `{ "ref": "funcName" }` | Direct function reference |
 | Async | `{ "ref": "funcName", "async": true, "queueName": "Q.NAME" }` | Wrapped in timer/queue node |
 | Topic | `{ "topicName": "event", "topicPublish": true, "queueName": "Q.NAME" }` | Publish to topic (queueName optional) |
+
+#### Async Queue Name Resolution
+
+When resolving an async reference, the queue name is determined using this priority (highest to lowest):
+
+1. **Resolver return value** - If an async resolver is set and returns a `queueName`
+2. **Inline queueName** - The `queueName` specified in the async reference itself
+3. **Function pool queueName** - The `queueName` defined on the function in the function pool
+4. **Auto-generated** - Falls back to `{functionName}_queue`
+
+**Example:**
+```json
+// Function pool
+{
+    "processPayments": {
+        "queueName": "PAYMENTS.QUEUE",
+        "children": [...]
+    }
+}
+
+// App config - async ref without inline queueName uses function's queueName
+{
+    "children": [
+        { "ref": "processPayments", "async": true }  // Uses "PAYMENTS.QUEUE"
+    ]
+}
+
+// App config - inline queueName overrides function's queueName
+{
+    "children": [
+        { "ref": "processPayments", "async": true, "queueName": "CUSTOM.QUEUE" }  // Uses "CUSTOM.QUEUE"
+    ]
+}
+```
+
+The async resolver also receives the effective queue name (inline or function pool) so it can make decisions based on it.
 
 ### Metadata Lines
 
