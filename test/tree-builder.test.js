@@ -585,6 +585,188 @@ describe('TreeBuilder', () => {
         });
     });
 
+    describe('queueName in function pool', () => {
+        it('should use function pool queueName for async refs without inline queueName', async () => {
+            builder.defineFunctions({
+                asyncFunc: {
+                    queueName: 'FUNC.DEFAULT.QUEUE'
+                }
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{ ref: 'asyncFunc', async: true }]
+            };
+
+            const tree = await builder.build(app);
+            assert.equal(tree.children[0].type, 'timer');
+            assert.equal(tree.children[0].name, 'FUNC.DEFAULT.QUEUE');
+        });
+
+        it('should prefer inline queueName over function pool queueName', async () => {
+            builder.defineFunctions({
+                asyncFunc: {
+                    queueName: 'FUNC.DEFAULT.QUEUE'
+                }
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{ ref: 'asyncFunc', async: true, queueName: 'INLINE.QUEUE' }]
+            };
+
+            const tree = await builder.build(app);
+            assert.equal(tree.children[0].name, 'INLINE.QUEUE');
+        });
+
+        it('should pass function pool queueName to async resolver when no inline queueName', async () => {
+            let receivedQueueName = null;
+
+            builder.defineFunctions({
+                asyncFunc: {
+                    queueName: 'FUNC.DEFAULT.QUEUE'
+                }
+            });
+
+            builder.setAsyncResolver((funcName, queueName) => {
+                receivedQueueName = queueName;
+                return {};
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{ ref: 'asyncFunc', async: true }]
+            };
+
+            await builder.build(app);
+            assert.equal(receivedQueueName, 'FUNC.DEFAULT.QUEUE');
+        });
+
+        it('should pass inline queueName to resolver even when function has queueName', async () => {
+            let receivedQueueName = null;
+
+            builder.defineFunctions({
+                asyncFunc: {
+                    queueName: 'FUNC.DEFAULT.QUEUE'
+                }
+            });
+
+            builder.setAsyncResolver((funcName, queueName) => {
+                receivedQueueName = queueName;
+                return {};
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{ ref: 'asyncFunc', async: true, queueName: 'INLINE.QUEUE' }]
+            };
+
+            await builder.build(app);
+            assert.equal(receivedQueueName, 'INLINE.QUEUE');
+        });
+
+        it('should allow resolver to override function pool queueName', async () => {
+            builder.defineFunctions({
+                asyncFunc: {
+                    queueName: 'FUNC.DEFAULT.QUEUE'
+                }
+            });
+
+            builder.setAsyncResolver((funcName, queueName) => {
+                return { queueName: 'RESOLVER.QUEUE' };
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{ ref: 'asyncFunc', async: true }]
+            };
+
+            const tree = await builder.build(app);
+            assert.equal(tree.children[0].name, 'RESOLVER.QUEUE');
+        });
+
+        it('should not include queueName in resolved function node', async () => {
+            builder.defineFunctions({
+                funcWithQueue: {
+                    queueName: 'FUNC.QUEUE',
+                    metadata_lines: [{ text: 'info' }]
+                }
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{ ref: 'funcWithQueue' }]
+            };
+
+            const tree = await builder.build(app);
+            const func = tree.children[0];
+
+            assert.equal(func.queueName, undefined, 'queueName should not be in output node');
+            assert.equal(func.name, 'funcWithQueue');
+            assert.ok(func.metadata_lines);
+        });
+
+        it('should use function pool queueName for async refs in function children', async () => {
+            builder.defineFunctions({
+                childFunc: {
+                    queueName: 'CHILD.QUEUE'
+                },
+                parentFunc: {
+                    children: [{ ref: 'childFunc', async: true }]
+                }
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{ ref: 'parentFunc' }]
+            };
+
+            const tree = await builder.build(app);
+            const asyncWrapper = tree.children[0].children[0];
+            assert.equal(asyncWrapper.type, 'timer');
+            assert.equal(asyncWrapper.name, 'CHILD.QUEUE');
+        });
+
+        it('should work with app field and queueName together', async () => {
+            builder.defineFunctions({
+                funcWithBoth: {
+                    app: 'MyApp',
+                    queueName: 'MY.QUEUE',
+                    metadata_lines: [{ text: 'info' }]
+                }
+            });
+
+            // Sync ref - should have app metadata, no queueName
+            const app1 = {
+                name: 'test-app',
+                type: 'app',
+                children: [{ ref: 'funcWithBoth' }]
+            };
+
+            const tree1 = await builder.build(app1);
+            const func = tree1.children[0];
+            assert.equal(func.metadata_lines[0].text, 'MyApp');
+            assert.equal(func.queueName, undefined);
+
+            // Async ref - should use the function's queueName
+            const app2 = {
+                name: 'test-app',
+                type: 'app',
+                children: [{ ref: 'funcWithBoth', async: true }]
+            };
+
+            const tree2 = await builder.build(app2);
+            assert.equal(tree2.children[0].name, 'MY.QUEUE');
+        });
+    });
+
     describe('multiple builds', () => {
         it('should clear cache between builds', async () => {
             builder.defineFunctions({

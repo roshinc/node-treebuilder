@@ -86,12 +86,13 @@ class TreeBuilder {
       return leaf;
     }
 
-    const { children, app, ...props } = def;
+    const { children, app, queueName, ...props } = def;
     const newVisited = new Set(visited);
     newVisited.add(name);
     const newPath = [...path, name];
 
     // Transform 'app' field into a metadata_line entry
+    // Note: queueName is extracted but not included in output - it's used for async refs to this function
     let finalProps = { ...props };
     if (app) {
       const appMetadataLine = { text: app, clickable: false };
@@ -141,16 +142,22 @@ class TreeBuilder {
       console.log("resolving asyn in _resolveChild");
       const { ref, async: _, queueName, ...existingProps } = child;
 
+      // Look up the function definition's queueName (default queue for async refs to this function)
+      const funcDef = this.functionDefs.get(ref);
+      const funcQueueName = funcDef?.queueName;
+
       let resolvedProps = {};
       if (this.asyncResolver) {
         console.log("TreeBuilder calling async resolver");
-        resolvedProps = await this.asyncResolver(ref, queueName) || {};
+        // Pass the effective queueName to resolver: ref's queueName > function's queueName
+        const effectiveQueueName = queueName || funcQueueName;
+        resolvedProps = await this.asyncResolver(ref, effectiveQueueName) || {};
       } else {
         console.debug("Async resolver was not set");
       }
 
-      // Merge, resolver props override existing, but existing queueName is fallback
-      const finalQueueName = resolvedProps.queueName || queueName || `${ref}_queue`;
+      // Priority: resolver > ref's queueName > function's queueName > default
+      const finalQueueName = resolvedProps.queueName || queueName || funcQueueName || `${ref}_queue`;
 
       return {
         name: finalQueueName,
@@ -217,17 +224,25 @@ class TreeBuilder {
     if (node.ref && node.async) {
       console.log("resolving asyn in build node");
       const { ref, async: _, queueName, ...queueProps } = node;
+
+      // Look up the function definition's queueName (default queue for async refs to this function)
+      const funcDef = this.functionDefs.get(ref);
+      const funcQueueName = funcDef?.queueName;
+
       let resolvedProps = {};
       if (this.asyncResolver) {
         console.log("resolving async ref with resolver");
-        resolvedProps = await this.asyncResolver(ref, queueName) || {};
+        // Pass the effective queueName to resolver: ref's queueName > function's queueName
+        const effectiveQueueName = queueName || funcQueueName;
+        resolvedProps = await this.asyncResolver(ref, effectiveQueueName) || {};
         console.log("After resolving async ref with resolver");
         console.log(resolvedProps);
       }
 
       console.log(resolvedProps);
 
-      const finalQueueName = resolvedProps.queueName || queueName || `${ref}_queue`;
+      // Priority: resolver > ref's queueName > function's queueName > default
+      const finalQueueName = resolvedProps.queueName || queueName || funcQueueName || `${ref}_queue`;
 
       return {
         name: finalQueueName,
