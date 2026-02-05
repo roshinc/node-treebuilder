@@ -9,7 +9,9 @@ class TreeBuilder {
     this.asyncRefResolver = null; // resolver to get the queue stats
     // Config with defaults
     this.config = {
-      unresolvedSeverity: config.unresolvedSeverity || 'warning' // 'error' or 'warning'
+      unresolvedSeverity: config.unresolvedSeverity || 'warning', // 'error' or 'warning'
+      filterEmptyUiServiceMethods: config.filterEmptyUiServiceMethods || false, // omit ui-service-methods with no children
+      filterEmptyUiServices: config.filterEmptyUiServices || false // omit ui-services with no children (after filtering methods)
     };
     console.debug("TreeBuilder constructed")
   }
@@ -346,9 +348,28 @@ class TreeBuilder {
       newPath = [...path, node.name];
     }
 
-    result.children = await Promise.all(node.children.map(child =>
+    const resolvedChildren = await Promise.all(node.children.map(child =>
       this._buildNode(child, newVisited, newPath)
     ));
+    // Filter out null children (nodes that were filtered out)
+    result.children = resolvedChildren.filter(child => child !== null);
+
+    // Filter empty ui-service-methods if configured
+    if (this.config.filterEmptyUiServiceMethods && node.type === 'ui-services') {
+      result.children = result.children.filter(child => {
+        if (child.type === 'ui-service-method') {
+          return child.children && child.children.length > 0;
+        }
+        return true;
+      });
+    }
+
+    // Filter empty ui-services if configured (after filtering methods)
+    if (this.config.filterEmptyUiServices && node.type === 'ui-services') {
+      if (!result.children || result.children.length === 0) {
+        return null; // Signal to parent to filter this node out
+      }
+    }
 
     return result;
   }
