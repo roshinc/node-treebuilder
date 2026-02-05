@@ -27,24 +27,33 @@ describe('TreeBuilder', () => {
         it('should define a function with no children', () => {
             builder.defineFunction('myFunc');
             assert.equal(builder.functionDefs.size, 1);
-            assert.ok(builder.functionDefs.has('myFunc'));
+            // Keys are stored lowercase for case-insensitive lookup
+            assert.ok(builder.functionDefs.has('myfunc'));
         });
 
         it('should define a function with children', () => {
             builder.defineFunction('parent', [ref('child1'), ref('child2')]);
+            // Keys are stored lowercase for case-insensitive lookup
             const def = builder.functionDefs.get('parent');
             assert.equal(def.children.length, 2);
         });
 
         it('should define a function with extra properties', () => {
             builder.defineFunction('myFunc', [], { customProp: 'value' });
-            const def = builder.functionDefs.get('myFunc');
+            // Keys are stored lowercase for case-insensitive lookup
+            const def = builder.functionDefs.get('myfunc');
             assert.equal(def.customProp, 'value');
         });
 
         it('should return the builder for chaining', () => {
             const result = builder.defineFunction('func1');
             assert.equal(result, builder);
+        });
+
+        it('should store displayName preserving original case', () => {
+            builder.defineFunction('MyFunc');
+            const def = builder.functionDefs.get('myfunc');
+            assert.equal(def.displayName, 'MyFunc');
         });
     });
 
@@ -62,13 +71,25 @@ describe('TreeBuilder', () => {
             builder.defineFunctions({
                 leafFunc: {}
             });
-            const def = builder.functionDefs.get('leafFunc');
+            // Keys are stored lowercase for case-insensitive lookup
+            const def = builder.functionDefs.get('leaffunc');
             assert.deepEqual(def.children, []);
         });
 
         it('should return the builder for chaining', () => {
             const result = builder.defineFunctions({ func1: {} });
             assert.equal(result, builder);
+        });
+
+        it('should store displayName preserving original case', () => {
+            builder.defineFunctions({
+                MyFunction: {},
+                AnotherFunc: { displayName: 'CustomName' }
+            });
+            // displayName should preserve original case
+            assert.equal(builder.functionDefs.get('myfunction').displayName, 'MyFunction');
+            // Explicit displayName should be preserved
+            assert.equal(builder.functionDefs.get('anotherfunc').displayName, 'CustomName');
         });
     });
 
@@ -885,6 +906,102 @@ describe('TreeBuilder', () => {
             // Both should resolve func1 correctly
             assert.equal(tree1.children[0].name, 'func1');
             assert.equal(tree2.children[0].name, 'func1');
+        });
+    });
+
+    describe('case-insensitive lookup', () => {
+        it('should resolve refs case-insensitively', async () => {
+            builder.defineFunctions({
+                myfunction: { displayName: 'MyFunction' }
+            });
+
+            // Ref with different casing should still resolve
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{ ref: 'MyFunction' }]
+            };
+
+            const tree = await builder.build(app);
+            assert.equal(tree.children[0].type, 'function');
+            assert.equal(tree.children[0].name, 'MyFunction');
+        });
+
+        it('should use displayName in output when pool key is lowercase', async () => {
+            builder.defineFunctions({
+                publishtrxnholdsreleaseevent: {
+                    displayName: 'publishTrxnHoldsReleaseEvent',
+                    app: 'dev-nims-ias-publish-events'
+                }
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{ ref: 'PublishTrxnHoldsReleaseEvent' }]
+            };
+
+            const tree = await builder.build(app);
+            assert.equal(tree.children[0].name, 'publishTrxnHoldsReleaseEvent');
+            assert.equal(tree.children[0].metadata_lines[0].text, 'dev-nims-ias-publish-events');
+        });
+
+        it('should handle async refs case-insensitively', async () => {
+            builder.defineFunctions({
+                asyncfunc: {
+                    displayName: 'AsyncFunc',
+                    queueName: 'ASYNC_QUEUE'
+                }
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{ ref: 'ASYNCFUNC', async: true }]
+            };
+
+            const tree = await builder.build(app);
+            assert.equal(tree.children[0].type, 'timer');
+            assert.equal(tree.children[0].name, 'ASYNC_QUEUE');
+            assert.equal(tree.children[0].children[0].name, 'AsyncFunc');
+        });
+
+        it('should use displayName for default queue name in async refs', async () => {
+            builder.defineFunctions({
+                myfunc: {
+                    displayName: 'MyFunc'
+                }
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{ ref: 'MYFUNC', async: true }]
+            };
+
+            const tree = await builder.build(app);
+            // Default queue name should use displayName, not the ref casing
+            assert.equal(tree.children[0].name, 'MyFunc_queue');
+        });
+
+        it('should resolve nested refs case-insensitively', async () => {
+            builder.defineFunctions({
+                childfunc: { displayName: 'ChildFunc' },
+                parentfunc: {
+                    displayName: 'ParentFunc',
+                    children: [ref('CHILDFUNC')]
+                }
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{ ref: 'parentFunc' }]
+            };
+
+            const tree = await builder.build(app);
+            assert.equal(tree.children[0].name, 'ParentFunc');
+            assert.equal(tree.children[0].children[0].name, 'ChildFunc');
         });
     });
 });
