@@ -3,10 +3,14 @@
  */
 
 class TreeBuilder {
-  constructor() {
+  constructor(config = {}) {
     this.functionDefs = new Map();      // registry of function definitions
     this.resolvedFunctions = new Map(); // cache of resolved function subtrees
     this.asyncRefResolver = null; // resolver to get the queue stats
+    // Config with defaults
+    this.config = {
+      unresolvedSeverity: config.unresolvedSeverity || 'warning' // 'error' or 'warning'
+    };
     console.debug("TreeBuilder constructed")
   }
 
@@ -80,10 +84,14 @@ class TreeBuilder {
 
     const def = this.functionDefs.get(name);
     if (!def) {
-      // Undefined function becomes leaf
-      const leaf = { name, type: 'function' };
-      this.resolvedFunctions.set(name, leaf);
-      return leaf;
+      // Undefined function becomes error/warning node
+      const unresolvedNode = {
+        name: `dependency to ${name} could not be resolved so the tree may be incomplete`,
+        type: this.config.unresolvedSeverity,
+        _unresolvedRef: name
+      };
+      this.resolvedFunctions.set(name, unresolvedNode);
+      return unresolvedNode;
     }
 
     const { children, app, queueName, ...props } = def;
@@ -325,8 +333,12 @@ class TreeBuilder {
       return cached;
     }
 
-    // Not in cache (undefined function) - return leaf
-    return { name, type: 'function' };
+    // Not in cache (undefined function) - return error/warning node
+    return {
+      name: `dependency to ${name} could not be resolved so the tree may be incomplete`,
+      type: this.config.unresolvedSeverity,
+      _unresolvedRef: name
+    };
   }
 
   /**
