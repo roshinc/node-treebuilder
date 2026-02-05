@@ -242,7 +242,7 @@ Any node can include `metadata_lines` - an array of metadata objects that will b
 ### TreeBuilder
 
 ```javascript
-const builder = new TreeBuilder();
+const builder = new TreeBuilder(config?);
 
 // Define functions
 builder.defineFunction(name, children?, extraProps?);
@@ -254,6 +254,54 @@ builder.setTopicPublishResolver((topicName, queueName) => ({ queueName }));
 
 // Build tree
 const tree = await builder.build(appStructure);
+```
+
+#### Configuration Options
+
+The `TreeBuilder` constructor accepts an optional configuration object:
+
+```javascript
+const builder = new TreeBuilder({
+    unresolvedSeverity: 'warning',        // 'error' or 'warning' (default: 'warning')
+    filterEmptyUiServiceMethods: false,   // Omit ui-service-methods with no children (default: false)
+    filterEmptyUiServices: false          // Omit ui-services with no children (default: false)
+});
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `unresolvedSeverity` | `'warning'` | Type of node created for unresolved function references (`'error'` or `'warning'`) |
+| `filterEmptyUiServiceMethods` | `false` | When `true`, ui-service-method nodes with no children are omitted from output |
+| `filterEmptyUiServices` | `false` | When `true`, ui-services nodes with no children (after filtering methods) are omitted from output |
+
+**Filtering Example:**
+
+```javascript
+// Filter out empty UI service methods and empty UI services sections
+const builder = new TreeBuilder({
+    filterEmptyUiServiceMethods: true,
+    filterEmptyUiServices: true
+});
+
+const tree = await builder.build({
+    name: 'my-app',
+    type: 'app',
+    children: [
+        {
+            name: 'ServiceGroup',
+            type: 'ui-services',
+            children: [
+                { name: 'emptyMethod', type: 'ui-service-method' },  // Filtered out (no children)
+                {
+                    name: 'methodWithFunc',
+                    type: 'ui-service-method',
+                    children: [{ ref: 'someFunc' }]  // Kept (has children)
+                }
+            ]
+        }
+    ]
+});
+// If all ui-service-methods are filtered out, the ui-services node itself is also omitted
 ```
 
 ### JSON Loader
@@ -293,7 +341,7 @@ node example-json.js
 npm test
 ```
 
-Runs 59 unit tests covering TreeBuilder and JSON loader functionality.
+Runs 93 unit tests covering TreeBuilder and JSON loader functionality.
 
 ## License
 
