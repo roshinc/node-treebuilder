@@ -24,17 +24,40 @@ class TreeBuilder {
     return this;
   }
 
+  /**
+   * Normalize a function name for case-insensitive lookup.
+   */
+  _normalizeName(name) {
+    return name?.toLowerCase();
+  }
+
+  /**
+   * Get the display name for a function.
+   * Uses displayName from def if available, otherwise uses the provided name.
+   */
+  _getDisplayName(name) {
+    const normalizedName = this._normalizeName(name);
+    const def = this.functionDefs.get(normalizedName);
+    return def?.displayName || name;
+  }
+
   defineFunction(name, children = [], extraProps = {}) {
-    this.functionDefs.set(name, { children, ...extraProps });
+    const normalizedName = this._normalizeName(name);
+    // Store with displayName if not already provided
+    const propsWithDisplayName = extraProps.displayName ? extraProps : { displayName: name, ...extraProps };
+    this.functionDefs.set(normalizedName, { children, ...propsWithDisplayName });
     return this;
   }
 
   defineFunctions(defs) {
     for (const [name, def] of Object.entries(defs)) {
       const { children, ...props } = def;
-      this.functionDefs.set(name, {
+      const normalizedName = this._normalizeName(name);
+      // Store with displayName if not already provided
+      const propsWithDisplayName = props.displayName ? props : { displayName: name, ...props };
+      this.functionDefs.set(normalizedName, {
         children: children || [],
-        ...props
+        ...propsWithDisplayName
       });
     }
     return this;
@@ -64,25 +87,30 @@ class TreeBuilder {
   /**
    * Resolve a function and cache it.
    * Cycle detection is path-based during this phase.
+   * Uses normalized (lowercase) names for lookups and cache keys.
    */
   async _resolveAndCacheFunction(name, visited, path) {
-    // Cycle detection
-    if (visited.has(name)) {
+    // Normalize for case-insensitive lookup
+    const normalizedName = this._normalizeName(name);
+
+    // Cycle detection (use normalized name)
+    if (visited.has(normalizedName)) {
       // Return a cycle marker (not cached - each occurrence gets current path)
+      const displayName = this._getDisplayName(name);
       return {
-        name: `loop detected stopping (${name})`,
+        name: `loop detected stopping (${displayName})`,
         type: 'dupe-stopper',
-        _cycleAt: name,
-        _path: [...path, name]
+        _cycleAt: displayName,
+        _path: [...path, displayName]
       };
     }
 
-    // Already resolved? Return cached version
-    if (this.resolvedFunctions.has(name)) {
-      return this.resolvedFunctions.get(name);
+    // Already resolved? Return cached version (use normalized name for cache)
+    if (this.resolvedFunctions.has(normalizedName)) {
+      return this.resolvedFunctions.get(normalizedName);
     }
 
-    const def = this.functionDefs.get(name);
+    const def = this.functionDefs.get(normalizedName);
     if (!def) {
       // Undefined function becomes error/warning node
       const unresolvedNode = {
@@ -90,14 +118,17 @@ class TreeBuilder {
         type: this.config.unresolvedSeverity,
         _unresolvedRef: name
       };
-      this.resolvedFunctions.set(name, unresolvedNode);
+      this.resolvedFunctions.set(normalizedName, unresolvedNode);
       return unresolvedNode;
     }
 
-    const { children, app, queueName, ...props } = def;
+    // Use displayName from definition for output
+    const { children, app, queueName, displayName, ...props } = def;
+    const outputName = displayName || name;
+
     const newVisited = new Set(visited);
-    newVisited.add(name);
-    const newPath = [...path, name];
+    newVisited.add(normalizedName);
+    const newPath = [...path, outputName];
 
     // Transform 'app' field into a metadata_line entry
     // Note: queueName is extracted but not included in output - it's used for async refs to this function
@@ -111,14 +142,15 @@ class TreeBuilder {
     }
 
     // Create node (add to cache BEFORE resolving children to handle self-reference)
+    // Use displayName for the output name
     const resolved = {
-      name,
+      name: outputName,
       type: 'function',
       ...finalProps
     };
 
-    // Placeholder in cache to handle direct self-reference
-    this.resolvedFunctions.set(name, resolved);
+    // Placeholder in cache to handle direct self-reference (use normalized name for cache key)
+    this.resolvedFunctions.set(normalizedName, resolved);
 
     // Resolve children
     if (children && children.length > 0) {
@@ -151,8 +183,11 @@ class TreeBuilder {
       const { ref, async: _, queueName, ...existingProps } = child;
 
       // Look up the function definition's queueName (default queue for async refs to this function)
-      const funcDef = this.functionDefs.get(ref);
+      // Use normalized name for case-insensitive lookup
+      const normalizedRef = this._normalizeName(ref);
+      const funcDef = this.functionDefs.get(normalizedRef);
       const funcQueueName = funcDef?.queueName;
+      const displayName = this._getDisplayName(ref);
 
       let resolvedProps = {};
       if (this.asyncResolver) {
@@ -164,8 +199,8 @@ class TreeBuilder {
         console.debug("Async resolver was not set");
       }
 
-      // Priority: resolver > ref's queueName > function's queueName > default
-      const finalQueueName = resolvedProps.queueName || queueName || funcQueueName || `${ref}_queue`;
+      // Priority: resolver > ref's queueName > function's queueName > default (use displayName for default)
+      const finalQueueName = resolvedProps.queueName || queueName || funcQueueName || `${displayName}_queue`;
 
       return {
         name: finalQueueName,
@@ -234,8 +269,11 @@ class TreeBuilder {
       const { ref, async: _, queueName, ...queueProps } = node;
 
       // Look up the function definition's queueName (default queue for async refs to this function)
-      const funcDef = this.functionDefs.get(ref);
+      // Use normalized name for case-insensitive lookup
+      const normalizedRef = this._normalizeName(ref);
+      const funcDef = this.functionDefs.get(normalizedRef);
       const funcQueueName = funcDef?.queueName;
+      const displayName = this._getDisplayName(ref);
 
       let resolvedProps = {};
       if (this.asyncResolver) {
@@ -249,8 +287,8 @@ class TreeBuilder {
 
       console.log(resolvedProps);
 
-      // Priority: resolver > ref's queueName > function's queueName > default
-      const finalQueueName = resolvedProps.queueName || queueName || funcQueueName || `${ref}_queue`;
+      // Priority: resolver > ref's queueName > function's queueName > default (use displayName for default)
+      const finalQueueName = resolvedProps.queueName || queueName || funcQueueName || `${displayName}_queue`;
 
       return {
         name: finalQueueName,
@@ -317,18 +355,23 @@ class TreeBuilder {
 
   /**
    * Get a function from cache, with cycle check for current path.
+   * Uses normalized (lowercase) names for lookups.
    */
   _getFunctionWithCycleCheck(name, visited, path) {
-    if (visited.has(name)) {
+    // Normalize for case-insensitive lookup
+    const normalizedName = this._normalizeName(name);
+    const displayName = this._getDisplayName(name);
+
+    if (visited.has(normalizedName)) {
       return {
-        name: `loop detected stopping (${name})`,
+        name: `loop detected stopping (${displayName})`,
         type: 'dupe-stopper',
-        _cycleAt: name,
-        _path: [...path, name]
+        _cycleAt: displayName,
+        _path: [...path, displayName]
       };
     }
 
-    const cached = this.resolvedFunctions.get(name);
+    const cached = this.resolvedFunctions.get(normalizedName);
     if (cached) {
       return cached;
     }
