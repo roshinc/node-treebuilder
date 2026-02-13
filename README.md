@@ -264,7 +264,8 @@ The `TreeBuilder` constructor accepts an optional configuration object:
 const builder = new TreeBuilder({
     unresolvedSeverity: 'warning',        // 'error' or 'warning' (default: 'warning')
     filterEmptyUiServiceMethods: false,   // Omit ui-service-methods with no children (default: false)
-    filterEmptyUiServices: false          // Omit ui-services with no children (default: false)
+    filterEmptyUiServices: false,         // Omit ui-services with no children (default: false)
+    logNodeTypes: ['function', 'timer']   // Node types that get a "Logs" metadata_line (default: null)
 });
 ```
 
@@ -273,6 +274,7 @@ const builder = new TreeBuilder({
 | `unresolvedSeverity` | `'warning'` | Type of node created for unresolved function references (`'error'` or `'warning'`) |
 | `filterEmptyUiServiceMethods` | `false` | When `true`, ui-service-method nodes with no children are omitted from output |
 | `filterEmptyUiServices` | `false` | When `true`, ui-services nodes with no children (after filtering methods) are omitted from output |
+| `logNodeTypes` | `null` | Array of node type strings (e.g., `['function', 'timer']`). Nodes whose type matches get a `{ text: 'Logs', clickable: true, data: { name, type, app } }` metadata_line prepended |
 
 **Filtering Example:**
 
@@ -302,6 +304,25 @@ const tree = await builder.build({
     ]
 });
 // If all ui-service-methods are filtered out, the ui-services node itself is also omitted
+```
+
+**Logs Metadata Line Example:**
+
+```javascript
+// Add a "Logs" metadata_line to function and timer nodes
+const builder = new TreeBuilder({
+    logNodeTypes: ['function', 'timer']
+});
+
+builder.defineFunctions({
+    myFunc: { app: 'MyApp', children: [] }
+});
+
+const tree = await builder.build({
+    name: 'my-app', type: 'app',
+    children: [{ ref: 'myFunc' }]
+});
+// tree.children[0].metadata_lines[0] = { text: 'Logs', clickable: true, data: { name: 'myFunc', type: 'function', app: 'MyApp' } }
 ```
 
 ### JSON Loader

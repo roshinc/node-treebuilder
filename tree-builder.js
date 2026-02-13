@@ -11,7 +11,8 @@ class TreeBuilder {
     this.config = {
       unresolvedSeverity: config.unresolvedSeverity || 'warning', // 'error' or 'warning'
       filterEmptyUiServiceMethods: config.filterEmptyUiServiceMethods || false, // omit ui-service-methods with no children
-      filterEmptyUiServices: config.filterEmptyUiServices || false // omit ui-services with no children (after filtering methods)
+      filterEmptyUiServices: config.filterEmptyUiServices || false, // omit ui-services with no children (after filtering methods)
+      logNodeTypes: config.logNodeTypes || null // e.g., ['function', 'timer'] - node types that get a "Logs" metadata_line
     };
     console.debug("TreeBuilder constructed")
   }
@@ -161,7 +162,10 @@ class TreeBuilder {
       );
     }
 
-    return resolved;
+    // Apply "Logs" metadata_line if this node type is configured for it
+    const finalResolved = this._applyLogMetadataLine(resolved, app ? { app } : {});
+    this.resolvedFunctions.set(normalizedName, finalResolved);
+    return finalResolved;
   }
 
   /**
@@ -204,14 +208,14 @@ class TreeBuilder {
       // Priority: resolver > ref's queueName > function's queueName > default (use displayName for default)
       const finalQueueName = resolvedProps.queueName || queueName || funcQueueName || `${displayName}_queue`;
 
-      return {
+      return this._applyLogMetadataLine({
         name: finalQueueName,
         type: 'timer', //'queue',
         ...existingProps,
         ...resolvedProps,
         queueName: undefined, // clean up, name is already set
         children: [await this._resolveAndCacheFunction(ref, visited, path)]
-      };
+      });
     }
 
     // Topic Publish refrence = queue wrapper
@@ -233,22 +237,22 @@ class TreeBuilder {
       // Merge, resolver props override existing, but existing queueName is fallback
       const finalQueueName = resolvedProps.queueName || queueName || `${topicName}_queue`;
 
-      return {
+      return this._applyLogMetadataLine({
         name: finalQueueName,
         type: 'topic', //'queue',
         ...existingProps,
         ...resolvedProps,
         queueName: undefined, // clean up, name is already set
         //children: [await this._resolveAndCacheFunction(ref, visited, path)]
-      };
+      });
     }
 
     // Inline queue
     if (child.type === 'queue' || child.type === 'timer' || child.type === 'topic') {
-      return {
+      return this._applyLogMetadataLine({
         ...child,
         children: await Promise.all(child.children?.map(c => this._resolveChild(c, visited, path))) || []
-      };
+      });
     }
 
     // Other inline node (shouldn't happen in function defs, but handle it)
@@ -292,13 +296,13 @@ class TreeBuilder {
       // Priority: resolver > ref's queueName > function's queueName > default (use displayName for default)
       const finalQueueName = resolvedProps.queueName || queueName || funcQueueName || `${displayName}_queue`;
 
-      return {
+      return this._applyLogMetadataLine({
         name: finalQueueName,
         type: 'timer',
         ...queueProps,
         ...resolvedProps,
         children: [this._getFunctionWithCycleCheck(ref, visited, path)]
-      };
+      });
     }
 
     // Topic Publish refrence = queue wrapper
@@ -316,19 +320,19 @@ class TreeBuilder {
 
       const finalQueueName = resolvedProps.queueName || queueName || `${ref}_queue`;
 
-      return {
+      return this._applyLogMetadataLine({
         name: finalQueueName,
         type: 'timer',
         ...queueProps,
         ...resolvedProps,
         //children: [this._getFunctionWithCycleCheck(ref, visited, path)]
-      };
+      });
     }
 
     // Copy node
     const result = { ...node };
 
-    if (!node.children) return result;
+    if (!node.children) return this._applyLogMetadataLine(result);
 
     // Track path for ui-service-method and function types
     let newVisited = visited;
@@ -371,7 +375,7 @@ class TreeBuilder {
       }
     }
 
-    return result;
+    return this._applyLogMetadataLine(result);
   }
 
   /**
@@ -414,6 +418,25 @@ class TreeBuilder {
    */
   _shouldTrack(type) {
     return type === 'function';
+  }
+
+  /**
+   * Conditionally prepend a "Logs" metadata_line to a node
+   * if its type is in the configured logNodeTypes list.
+   * Returns a new object (to avoid cache mutation), or the original if no modification needed.
+   * @param {object} node - The node to potentially modify
+   * @param {object} extraData - Additional data to include in the log metadata (e.g., { app })
+   */
+  _applyLogMetadataLine(node, extraData = {}) {
+    if (!node || !this.config.logNodeTypes || !this.config.logNodeTypes.includes(node.type)) {
+      return node;
+    }
+    const logData = { name: node.name, type: node.type, ...extraData };
+    const logMetadataLine = { text: 'Logs', clickable: true, data: logData };
+    return {
+      ...node,
+      metadata_lines: [logMetadataLine, ...(node.metadata_lines || [])]
+    };
   }
 
   static ref(name) {
