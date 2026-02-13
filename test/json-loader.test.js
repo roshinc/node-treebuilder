@@ -9,7 +9,9 @@ import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
 import {
     loadFromFile,
+    loadFunctionPool,
     loadApp,
+    loadAppFromUrl,
     loadFunctionPoolFromDirectory,
     listAvailableApps,
     validateApp,
@@ -23,6 +25,52 @@ const __dirname = dirname(__filename);
 const projectRoot = join(__dirname, '..');
 
 describe('JSON Loader', () => {
+    describe('loadFunctionPool', () => {
+        it('should unwrap wrapped function pool string payload from URL', async () => {
+            const originalFetch = globalThis.fetch;
+            globalThis.fetch = async () => ({
+                ok: true,
+                json: async () => ({
+                    lastModified: '2026-02-12T12:05:49.432791',
+                    functionPool: JSON.stringify({
+                        func1: {},
+                        func2: { children: [{ ref: 'func1' }] }
+                    })
+                })
+            });
+
+            try {
+                const pool = await loadFunctionPool('https://api.example.com/config/functionPool');
+                assert.ok(typeof pool === 'object');
+                assert.ok('func1' in pool);
+                assert.ok('func2' in pool);
+            } finally {
+                globalThis.fetch = originalFetch;
+            }
+        });
+
+        it('should unwrap wrapped function pool object payload from URL', async () => {
+            const originalFetch = globalThis.fetch;
+            globalThis.fetch = async () => ({
+                ok: true,
+                json: async () => ({
+                    lastModified: '2026-02-12T12:05:49.432791',
+                    functionPool: {
+                        func1: {}
+                    }
+                })
+            });
+
+            try {
+                const pool = await loadFunctionPool('https://api.example.com/config/functionPool');
+                assert.ok(typeof pool === 'object');
+                assert.ok('func1' in pool);
+            } finally {
+                globalThis.fetch = originalFetch;
+            }
+        });
+    });
+
     describe('loadFromFile', () => {
         it('should load and parse a JSON file', async () => {
             const configDir = getDefaultConfigDir();
@@ -72,6 +120,58 @@ describe('JSON Loader', () => {
                 loadApp('non-existent-app', appsDir),
                 { code: 'ENOENT' }
             );
+        });
+    });
+
+    describe('loadAppFromUrl', () => {
+        it('should unwrap wrapped app template string payload from URL', async () => {
+            const originalFetch = globalThis.fetch;
+            globalThis.fetch = async () => ({
+                ok: true,
+                json: async () => ({
+                    appName: 'nims-wt-file-process-app',
+                    imageId: 'nims-wt-file-process-app:202602060905',
+                    template: JSON.stringify({
+                        name: 'nims-wt-file-process-app',
+                        type: 'app',
+                        children: []
+                    }),
+                    deployedAt: '2026-02-12T12:02:36.088183'
+                })
+            });
+
+            try {
+                const app = await loadAppFromUrl('https://api.example.com/apps/nims-wt-file-process-app');
+                assert.equal(app.name, 'nims-wt-file-process-app');
+                assert.equal(app.type, 'app');
+            } finally {
+                globalThis.fetch = originalFetch;
+            }
+        });
+
+        it('should unwrap wrapped app template object payload from URL', async () => {
+            const originalFetch = globalThis.fetch;
+            globalThis.fetch = async () => ({
+                ok: true,
+                json: async () => ({
+                    appName: 'nims-wt-file-process-app',
+                    imageId: 'nims-wt-file-process-app:202602060905',
+                    template: {
+                        name: 'nims-wt-file-process-app',
+                        type: 'app',
+                        children: []
+                    },
+                    deployedAt: '2026-02-12T12:02:36.088183'
+                })
+            });
+
+            try {
+                const app = await loadAppFromUrl('https://api.example.com/apps/nims-wt-file-process-app');
+                assert.equal(app.name, 'nims-wt-file-process-app');
+                assert.equal(app.type, 'app');
+            } finally {
+                globalThis.fetch = originalFetch;
+            }
         });
     });
 

@@ -77,20 +77,56 @@ async function loadApp(appName, appsDir) {
  * Load a single application configuration from a URL
  * @param {string} url - URL to fetch the app config from
  * @param {object} options - Fetch options (headers, etc.)
- * @returns {Promise<object>} Application configuration object
+ * @returns {Promise<object>} Application configuration object. Supports wrapped
+ *                            URL payloads: { appName, imageId, template, deployedAt },
+ *                            where template can be either an object or a JSON string.
  */
 async function loadAppFromUrl(url, options = {}) {
-    return loadFromUrl(url, options);
+    const payload = await loadFromUrl(url, options);
+
+    if (payload && typeof payload === 'object' && 'template' in payload) {
+        const templateValue = payload.template;
+
+        if (typeof templateValue === 'string') {
+            return JSON.parse(templateValue);
+        }
+
+        if (templateValue && typeof templateValue === 'object') {
+            return templateValue;
+        }
+
+        throw new Error('Invalid app payload: "template" must be a JSON string or object');
+    }
+
+    return payload;
 }
 
 /**
  * Load function pool configuration
  * @param {string} source - File path or URL to functionPool.json
  * @param {object} options - Fetch options for URL sources
- * @returns {Promise<object>} Function pool object
+ * @returns {Promise<object>} Function pool object. Supports wrapped URL payloads:
+ *                            { lastModified, functionPool }, where functionPool
+ *                            can be either an object or a JSON string.
  */
 async function loadFunctionPool(source, options = {}) {
-    return loadJson(source, options);
+    const payload = await loadJson(source, options);
+
+    if (payload && typeof payload === 'object' && 'functionPool' in payload) {
+        const poolValue = payload.functionPool;
+
+        if (typeof poolValue === 'string') {
+            return JSON.parse(poolValue);
+        }
+
+        if (poolValue && typeof poolValue === 'object') {
+            return poolValue;
+        }
+
+        throw new Error('Invalid function pool payload: "functionPool" must be a JSON string or object');
+    }
+
+    return payload;
 }
 
 /**
