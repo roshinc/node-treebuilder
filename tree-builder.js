@@ -6,7 +6,7 @@ class TreeBuilder {
   constructor(config = {}) {
     this.functionDefs = new Map();      // registry of function definitions
     this.resolvedFunctions = new Map(); // cache of resolved function subtrees
-    this.asyncRefResolver = null; // resolver to get the queue stats
+    this.asyncResolver = null; // resolver to get the queue stats
     // Config with defaults
     this.config = {
       unresolvedSeverity: config.unresolvedSeverity || 'warning', // 'error' or 'warning'
@@ -222,11 +222,12 @@ class TreeBuilder {
     if (child.topicPublish) {
       console.log(child);
       const { ref, topicName, topicPublish: _, queueName, ...existingProps } = child;
+      const effectiveTopicName = topicName || 'unknown topic';
       let resolvedProps = {};
       if (this.topicPublishResolver) {
         console.log("TreeBuilder calling topic publish resolver");
         try {
-          resolvedProps = await this.topicPublishResolver(topicName, queueName) || {};
+          resolvedProps = await this.topicPublishResolver(effectiveTopicName, queueName) || {};
         } catch (error) {
           console.error(error);
         }
@@ -235,7 +236,9 @@ class TreeBuilder {
       }
 
       // Merge, resolver props override existing, but existing queueName is fallback
-      const finalQueueName = resolvedProps.queueName || queueName || `${topicName}_queue`;
+      const finalQueueName = resolvedProps.queueName
+        || queueName
+        || (topicName ? `${topicName}_queue` : 'unknown topic');
 
       return this._applyLogMetadataLine({
         name: finalQueueName,
@@ -308,21 +311,24 @@ class TreeBuilder {
     // Topic Publish refrence = queue wrapper
     if (node.topicPublish) {
       const { ref, topicName, topicPublish: _, queueName, ...queueProps } = node;
+      const effectiveTopicName = topicName || 'unknown topic';
       let resolvedProps = {};
       if (this.topicPublishResolver) {
         console.log("resolving topic publish ref with resolver");
-        resolvedProps = await this.topicPublishResolver(topicName, queueName) || {};
+        resolvedProps = await this.topicPublishResolver(effectiveTopicName, queueName) || {};
         console.log("After resolving publish ref with resolver");
         console.log(resolvedProps);
       }
 
       console.log(resolvedProps);
 
-      const finalQueueName = resolvedProps.queueName || queueName || `${ref}_queue`;
+      const finalQueueName = resolvedProps.queueName
+        || queueName
+        || (topicName ? `${topicName}_queue` : 'unknown topic');
 
       return this._applyLogMetadataLine({
         name: finalQueueName,
-        type: 'timer',
+        type: 'topic',
         ...queueProps,
         ...resolvedProps,
         //children: [this._getFunctionWithCycleCheck(ref, visited, path)]

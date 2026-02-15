@@ -347,6 +347,30 @@ describe('TreeBuilder', () => {
             await builder.build(app);
             assert.ok(resolverCalled);
         });
+
+        it('should create topic nodes for app-level topicPublish refs', async () => {
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{ topicName: 'myTopic', topicPublish: true }]
+            };
+
+            const tree = await builder.build(app);
+            assert.equal(tree.children[0].type, 'topic');
+            assert.ok(tree.children[0].name.includes('myTopic'));
+        });
+
+        it('should use "unknown topic" for app-level topicPublish refs without topicName', async () => {
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{ topicPublish: true }]
+            };
+
+            const tree = await builder.build(app);
+            assert.equal(tree.children[0].type, 'topic');
+            assert.equal(tree.children[0].name, 'unknown topic');
+        });
     });
 
     describe('static helper functions', () => {
