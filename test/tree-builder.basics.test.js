@@ -4,7 +4,7 @@
 
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { TreeBuilder, ref, asyncRef } from '../tree-builder.js';
+import { TreeBuilder, ref, asyncRef, topicPublishRef } from '../tree-builder.js';
 
 describe('TreeBuilder', () => {
     let builder;
