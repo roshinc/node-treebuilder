@@ -167,6 +167,7 @@ describe('TreeBuilder', () => {
             };
 
             const tree = await builder.build(app);
+
             // funcA -> funcB -> (cycle at funcA)
             const funcB = tree.children[0].children[0];
             assert.equal(funcB.name, 'funcB');
@@ -188,6 +189,58 @@ describe('TreeBuilder', () => {
             const tree = await builder.build(app);
             assert.equal(tree.children[0].name, 'selfRef');
             assert.equal(tree.children[0].children[0].type, 'dupe-stopper');
+        });
+
+        it('should not reuse cycle stoppers from a different root path', async () => {
+            builder.defineFunctions({
+                A: { children: [ref('B')] },
+                B: { children: [ref('C')] },
+                C: { children: [ref('B')] },
+                D: { children: [ref('C')] }
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{ ref: 'D' }]
+            };
+
+            const tree = await builder.build(app);
+            const cNode = tree.children[0].children[0];
+            assert.equal(cNode.name, 'C');
+            assert.equal(cNode.children[0].name, 'B');
+            assert.equal(cNode.children[0].children[0].type, 'dupe-stopper');
+            assert.ok(cNode.children[0].children[0].name.includes('C'));
+        });
+
+        it('should resolve sync+async refs to same function consistently when async children are involved', async () => {
+            const raceBuilder = new TreeBuilder({ logNodeTypes: ['function', 'timer'] });
+            raceBuilder.defineFunctions({
+                A: { children: [ref('B'), asyncRef('B')] },
+                B: { children: [asyncRef('C')] },
+                C: {}
+            });
+
+            raceBuilder.setAsyncResolver(async (funcName) => {
+                if (funcName === 'C') {
+                    await new Promise(resolve => setTimeout(resolve, 25));
+                }
+                return {};
+            });
+
+            const tree = await raceBuilder.build({
+                name: 'test-app',
+                type: 'app',
+                children: [{ ref: 'A' }]
+            });
+
+            const syncB = tree.children[0].children[0];
+            const asyncWrapper = tree.children[0].children[1];
+            const asyncB = asyncWrapper.children[0];
+            assert.equal(syncB.type, 'function');
+            assert.equal(asyncWrapper.type, 'timer');
+            assert.equal(asyncB.type, 'function');
+            assert.deepEqual(syncB.metadata_lines, asyncB.metadata_lines);
         });
 
         it('should preserve ui-services structure', async () => {
@@ -1264,6 +1317,25 @@ describe('TreeBuilder', () => {
             const tree = await builder.build(app);
             assert.equal(tree.children[0].name, 'ParentFunc');
             assert.equal(tree.children[0].children[0].name, 'ChildFunc');
+        });
+
+        it('should detect inline function loops case-insensitively', async () => {
+            builder.defineFunctions({
+                myfunc: {}
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{
+                    name: 'MyFunc',
+                    type: 'function',
+                    children: [{ ref: 'myfunc' }]
+                }]
+            };
+
+            const tree = await builder.build(app);
+            assert.equal(tree.children[0].children[0].type, 'dupe-stopper');
         });
     });
 
