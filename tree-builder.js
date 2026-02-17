@@ -6,7 +6,9 @@ class TreeBuilder {
   constructor(config = {}) {
     this.functionDefs = new Map();      // registry of function definitions
     this.resolvedFunctions = new Map(); // cache of resolved function subtrees
+    this.inFlightResolutions = new Map(); // tracks promises for in-flight async function resolutions keyed by function and visited context, allowing concurrent callers to share the same promise and avoid duplicate work
     this.asyncResolver = null; // resolver to get the queue stats
+    this.topicPublishResolver = null;
     // Config with defaults
     this.config = {
       unresolvedSeverity: config.unresolvedSeverity || 'warning', // 'error' or 'warning'
@@ -14,7 +16,6 @@ class TreeBuilder {
       filterEmptyUiServices: config.filterEmptyUiServices || false, // omit ui-services with no children (after filtering methods)
       logNodeTypes: config.logNodeTypes || null // e.g., ['function', 'timer'] - node types that get a "Logs" metadata_line
     };
-    console.debug("TreeBuilder constructed")
   }
 
   setAsyncResolver(resolver) {
@@ -69,6 +70,7 @@ class TreeBuilder {
   async build(rootStructure) {
     // Clear cache for fresh build
     this.resolvedFunctions.clear();
+    this.inFlightResolutions.clear();
     // First pass: resolve all functions (builds cache)
     await this._preResolveAllFunctions();
     // Second pass: build tree using cached functions
@@ -80,11 +82,28 @@ class TreeBuilder {
    * This ensures consistent subtrees everywhere.
    */
   async _preResolveAllFunctions() {
+    const emptyVisited = new Set();
     for (const name of this.functionDefs.keys()) {
-      if (!this.resolvedFunctions.has(name)) {
-        await this._resolveAndCacheFunction(name, new Set(), []);
+      const cacheKey = this._getFunctionCacheKey(name, emptyVisited);
+      if (!this.resolvedFunctions.has(cacheKey)) {
+        await this._resolveAndCacheFunction(name, emptyVisited, []);
       }
     }
+  }
+
+  _getFunctionCacheKey(name, visited = new Set()) {
+    const normalizedName = this._normalizeName(name);
+    const visitedKey = [...visited].sort().join('|');
+    return `${normalizedName}::${visitedKey}`;
+  }
+
+  _createCycleStopper(displayName, path) {
+    return {
+      name: `loop detected stopping (${displayName})`,
+      type: 'dupe-stopper',
+      _cycleAt: displayName,
+      _path: [...path, displayName]
+    };
   }
 
   /**
@@ -95,22 +114,22 @@ class TreeBuilder {
   async _resolveAndCacheFunction(name, visited, path) {
     // Normalize for case-insensitive lookup
     const normalizedName = this._normalizeName(name);
+    const cacheKey = this._getFunctionCacheKey(normalizedName, visited);
 
     // Cycle detection (use normalized name)
     if (visited.has(normalizedName)) {
-      // Return a cycle marker (not cached - each occurrence gets current path)
       const displayName = this._getDisplayName(name);
-      return {
-        name: `loop detected stopping (${displayName})`,
-        type: 'dupe-stopper',
-        _cycleAt: displayName,
-        _path: [...path, displayName]
-      };
+      return this._createCycleStopper(displayName, path);
     }
 
-    // Already resolved? Return cached version (use normalized name for cache)
-    if (this.resolvedFunctions.has(normalizedName)) {
-      return this.resolvedFunctions.get(normalizedName);
+    // Already resolved for this path context?
+    if (this.resolvedFunctions.has(cacheKey)) {
+      return this.resolvedFunctions.get(cacheKey);
+    }
+
+    // If another branch is currently resolving the same path context, await it.
+    if (this.inFlightResolutions.has(cacheKey)) {
+      return await this.inFlightResolutions.get(cacheKey);
     }
 
     const def = this.functionDefs.get(normalizedName);
@@ -121,51 +140,56 @@ class TreeBuilder {
         type: this.config.unresolvedSeverity,
         _unresolvedRef: name
       };
-      this.resolvedFunctions.set(normalizedName, unresolvedNode);
+      this.resolvedFunctions.set(cacheKey, unresolvedNode);
       return unresolvedNode;
     }
 
-    // Use displayName from definition for output
-    const { children, app, queueName, displayName, ...props } = def;
-    const outputName = displayName || name;
+    const resolvePromise = (async () => {
+      // Use displayName from definition for output
+      const { children, app, queueName, displayName, ...props } = def;
+      const outputName = displayName || name;
 
-    const newVisited = new Set(visited);
-    newVisited.add(normalizedName);
-    const newPath = [...path, outputName];
+      const newVisited = new Set(visited);
+      newVisited.add(normalizedName);
+      const newPath = [...path, outputName];
 
-    // Transform 'app' field into a metadata_line entry
-    // Note: queueName is extracted but not included in output - it's used for async refs to this function
-    let finalProps = { ...props };
-    if (app) {
-      const appMetadataLine = { text: app, clickable: false };
-      finalProps.metadata_lines = [
-        appMetadataLine,
-        ...(props.metadata_lines || [])
-      ];
+      // Transform 'app' field into a metadata_line entry
+      // Note: queueName is extracted but not included in output - it's used for async refs to this function
+      let finalProps = { ...props };
+      if (app) {
+        const appMetadataLine = { text: app, clickable: false };
+        finalProps.metadata_lines = [
+          appMetadataLine,
+          ...(props.metadata_lines || [])
+        ];
+      }
+
+      // Create node (use displayName for the output name)
+      const resolved = {
+        name: outputName,
+        type: 'function',
+        ...finalProps
+      };
+
+      // Resolve children
+      if (children && children.length > 0) {
+        resolved.children = await Promise.all(
+          children.map(child => this._resolveChild(child, newVisited, newPath))
+        );
+      }
+
+      // Apply "Logs" metadata_line if this node type is configured for it
+      const finalResolved = this._applyLogMetadataLine(resolved, app ? { app } : {});
+      this.resolvedFunctions.set(cacheKey, finalResolved);
+      return finalResolved;
+    })();
+
+    this.inFlightResolutions.set(cacheKey, resolvePromise);
+    try {
+      return await resolvePromise;
+    } finally {
+      this.inFlightResolutions.delete(cacheKey);
     }
-
-    // Create node (add to cache BEFORE resolving children to handle self-reference)
-    // Use displayName for the output name
-    const resolved = {
-      name: outputName,
-      type: 'function',
-      ...finalProps
-    };
-
-    // Placeholder in cache to handle direct self-reference (use normalized name for cache key)
-    this.resolvedFunctions.set(normalizedName, resolved);
-
-    // Resolve children
-    if (children && children.length > 0) {
-      resolved.children = await Promise.all(
-        children.map(child => this._resolveChild(child, newVisited, newPath))
-      );
-    }
-
-    // Apply "Logs" metadata_line if this node type is configured for it
-    const finalResolved = this._applyLogMetadataLine(resolved, app ? { app } : {});
-    this.resolvedFunctions.set(normalizedName, finalResolved);
-    return finalResolved;
   }
 
   /**
@@ -173,19 +197,12 @@ class TreeBuilder {
    */
   async _resolveChild(child, visited, path) {
     // Sync reference
-    // console.debug("Resolving Sync Child");
-    // console.debug(child);
     if (child.ref && !child.async && !child.topicPublish) {
       return this._resolveAndCacheFunction(child.ref, visited, path);
     }
 
-
-
     // Async reference = queue wrapper
-    // call resolver if set
     if (child.ref && child.async) {
-      console.debug("Resolving Async Child");
-      console.log("resolving asyn in _resolveChild");
       const { ref, async: _, queueName, ...existingProps } = child;
 
       // Look up the function definition's queueName (default queue for async refs to this function)
@@ -197,12 +214,9 @@ class TreeBuilder {
 
       let resolvedProps = {};
       if (this.asyncResolver) {
-        console.log("TreeBuilder calling async resolver");
         // Pass the effective queueName to resolver: ref's queueName > function's queueName
         const effectiveQueueName = queueName || funcQueueName;
         resolvedProps = await this.asyncResolver(ref, effectiveQueueName) || {};
-      } else {
-        console.debug("Async resolver was not set");
       }
 
       // Priority: resolver > ref's queueName > function's queueName > default (use displayName for default)
@@ -218,21 +232,17 @@ class TreeBuilder {
       });
     }
 
-    // Topic Publish refrence = queue wrapper
+    // Topic Publish reference = queue wrapper
     if (child.topicPublish) {
-      console.log(child);
       const { ref, topicName, topicPublish: _, queueName, ...existingProps } = child;
       const effectiveTopicName = topicName || 'unknown topic';
       let resolvedProps = {};
       if (this.topicPublishResolver) {
-        console.log("TreeBuilder calling topic publish resolver");
         try {
           resolvedProps = await this.topicPublishResolver(effectiveTopicName, queueName) || {};
-        } catch (error) {
-          console.error(error);
+        } catch (_error) {
+          resolvedProps = {};
         }
-      } else {
-        console.debug("topic publish resolver was not set");
       }
 
       // Merge, resolver props override existing, but existing queueName is fallback
@@ -269,12 +279,11 @@ class TreeBuilder {
   async _buildNode(node, visited = new Set(), path = []) {
     // Sync reference
     if (node.ref && !node.async && !node.topicPublish) {
-      return this._getFunctionWithCycleCheck(node.ref, visited, path);
+      return await this._getFunctionWithCycleCheck(node.ref, visited, path);
     }
 
     // Async reference = queue wrapper
     if (node.ref && node.async) {
-      console.log("resolving asyn in build node");
       const { ref, async: _, queueName, ...queueProps } = node;
 
       // Look up the function definition's queueName (default queue for async refs to this function)
@@ -286,15 +295,10 @@ class TreeBuilder {
 
       let resolvedProps = {};
       if (this.asyncResolver) {
-        console.log("resolving async ref with resolver");
         // Pass the effective queueName to resolver: ref's queueName > function's queueName
         const effectiveQueueName = queueName || funcQueueName;
         resolvedProps = await this.asyncResolver(ref, effectiveQueueName) || {};
-        console.log("After resolving async ref with resolver");
-        console.log(resolvedProps);
       }
-
-      console.log(resolvedProps);
 
       // Priority: resolver > ref's queueName > function's queueName > default (use displayName for default)
       const finalQueueName = resolvedProps.queueName || queueName || funcQueueName || `${displayName}_queue`;
@@ -304,23 +308,18 @@ class TreeBuilder {
         type: 'timer',
         ...queueProps,
         ...resolvedProps,
-        children: [this._getFunctionWithCycleCheck(ref, visited, path)]
+        children: [await this._getFunctionWithCycleCheck(ref, visited, path)]
       });
     }
 
-    // Topic Publish refrence = queue wrapper
+    // Topic Publish reference = queue wrapper
     if (node.topicPublish) {
       const { ref, topicName, topicPublish: _, queueName, ...queueProps } = node;
       const effectiveTopicName = topicName || 'unknown topic';
       let resolvedProps = {};
       if (this.topicPublishResolver) {
-        console.log("resolving topic publish ref with resolver");
         resolvedProps = await this.topicPublishResolver(effectiveTopicName, queueName) || {};
-        console.log("After resolving publish ref with resolver");
-        console.log(resolvedProps);
       }
-
-      console.log(resolvedProps);
 
       const finalQueueName = resolvedProps.queueName
         || queueName
@@ -345,16 +344,12 @@ class TreeBuilder {
     let newPath = path;
 
     if (this._shouldTrack(node.type) && node.name) {
-      if (visited.has(node.name)) {
-        return {
-          name: `loop detected stopping (${node.name})`,
-          type: 'dupe-stopper',
-          _cycleAt: node.name,
-          _path: [...path, node.name]
-        };
+      const normalizedNodeName = this._normalizeName(node.name);
+      if (visited.has(normalizedNodeName)) {
+        return this._createCycleStopper(node.name, path);
       }
       newVisited = new Set(visited);
-      newVisited.add(node.name);
+      newVisited.add(normalizedNodeName);
       newPath = [...path, node.name];
     }
 
@@ -388,31 +383,22 @@ class TreeBuilder {
    * Get a function from cache, with cycle check for current path.
    * Uses normalized (lowercase) names for lookups.
    */
-  _getFunctionWithCycleCheck(name, visited, path) {
+  async _getFunctionWithCycleCheck(name, visited, path) {
     // Normalize for case-insensitive lookup
     const normalizedName = this._normalizeName(name);
     const displayName = this._getDisplayName(name);
 
     if (visited.has(normalizedName)) {
-      return {
-        name: `loop detected stopping (${displayName})`,
-        type: 'dupe-stopper',
-        _cycleAt: displayName,
-        _path: [...path, displayName]
-      };
+      return this._createCycleStopper(displayName, path);
     }
 
-    const cached = this.resolvedFunctions.get(normalizedName);
+    const cacheKey = this._getFunctionCacheKey(normalizedName, visited);
+    const cached = this.resolvedFunctions.get(cacheKey);
     if (cached) {
       return cached;
     }
 
-    // Not in cache (undefined function) - return error/warning node
-    return {
-      name: `dependency to ${name} could not be resolved so the tree may be incomplete`,
-      type: this.config.unresolvedSeverity,
-      _unresolvedRef: name
-    };
+    return await this._resolveAndCacheFunction(name, visited, path);
   }
 
   /**
