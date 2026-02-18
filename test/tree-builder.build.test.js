@@ -276,6 +276,56 @@ describe('TreeBuilder', () => {
             assert.equal(tree.children[0].name, 'RESOLVED.QUEUE');
             assert.equal(tree.children[0].depth, 5);
         });
+
+        it('should keep existing queue values when async resolver returns nothing', async () => {
+            builder.defineFunctions({
+                asyncFunc: {}
+            });
+
+            builder.setAsyncResolver(() => undefined);
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{ ref: 'asyncFunc', async: true, queueName: 'ORIGINAL.QUEUE', priority: 'high' }]
+            };
+
+            const tree = await builder.build(app);
+            assert.equal(tree.children[0].name, 'ORIGINAL.QUEUE');
+            assert.equal(tree.children[0].priority, 'high');
+        });
+
+        it('should log and annotate async nodes when async resolver throws', async () => {
+            builder.defineFunctions({
+                asyncFunc: {}
+            });
+
+            const consoleErrorOriginal = console.error;
+            const consoleErrors = [];
+            console.error = (...args) => {
+                consoleErrors.push(args);
+            };
+
+            try {
+                builder.setAsyncResolver(() => {
+                    throw new Error('async resolver boom');
+                });
+
+                const app = {
+                    name: 'test-app',
+                    type: 'app',
+                    children: [{ ref: 'asyncFunc', async: true, queueName: 'ORIGINAL.QUEUE' }]
+                };
+
+                const tree = await builder.build(app);
+                assert.equal(tree.children[0].name, 'ORIGINAL.QUEUE');
+                assert.equal(tree.children[0].children[0].name, 'asyncFunc');
+                assert.ok(tree.children[0].metadata_lines.some(line => line.text.includes('asyncResolver errored out')));
+                assert.ok(consoleErrors.length > 0);
+            } finally {
+                console.error = consoleErrorOriginal;
+            }
+        });
     });
 
 
@@ -321,6 +371,47 @@ describe('TreeBuilder', () => {
 
             await builder.build(app);
             assert.ok(resolverCalled);
+        });
+
+        it('should keep existing queue values when topic publish resolver returns nothing', async () => {
+            builder.setTopicPublishResolver(() => null);
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{ topicName: 'myTopic', topicPublish: true, queueName: 'TOPIC.ORIGINAL.QUEUE', stage: 'publish' }]
+            };
+
+            const tree = await builder.build(app);
+            assert.equal(tree.children[0].name, 'TOPIC.ORIGINAL.QUEUE');
+            assert.equal(tree.children[0].stage, 'publish');
+        });
+
+        it('should log and annotate topic nodes when topic publish resolver throws', async () => {
+            const consoleErrorOriginal = console.error;
+            const consoleErrors = [];
+            console.error = (...args) => {
+                consoleErrors.push(args);
+            };
+
+            try {
+                builder.setTopicPublishResolver(() => {
+                    throw new Error('topic resolver boom');
+                });
+
+                const app = {
+                    name: 'test-app',
+                    type: 'app',
+                    children: [{ topicName: 'myTopic', topicPublish: true, queueName: 'TOPIC.ORIGINAL.QUEUE' }]
+                };
+
+                const tree = await builder.build(app);
+                assert.equal(tree.children[0].name, 'TOPIC.ORIGINAL.QUEUE');
+                assert.ok(tree.children[0].metadata_lines.some(line => line.text.includes('topicPublishResolver errored out')));
+                assert.ok(consoleErrors.length > 0);
+            } finally {
+                console.error = consoleErrorOriginal;
+            }
         });
 
         it('should create topic nodes for app-level topicPublish refs', async () => {

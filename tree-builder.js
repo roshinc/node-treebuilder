@@ -28,6 +28,39 @@ class TreeBuilder {
     return this;
   }
 
+  _createResolverErrorMetadataLines(resolverName, error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return [{
+      text: `${resolverName} errored out${message ? `: ${message}` : ''}`,
+      clickable: false
+    }];
+  }
+
+  async _resolveExternalProps(resolver, resolverName, args) {
+    if (!resolver) {
+      return { resolvedProps: {}, errorMetadataLines: [] };
+    }
+
+    try {
+      const result = await resolver(...args);
+      if (result === null || result === undefined) {
+        return { resolvedProps: {}, errorMetadataLines: [] };
+      }
+      return { resolvedProps: result, errorMetadataLines: [] };
+    } catch (error) {
+      console.error(`[TreeBuilder] ${resolverName} failed`, error);
+      return {
+        resolvedProps: {},
+        errorMetadataLines: this._createResolverErrorMetadataLines(resolverName, error)
+      };
+    }
+  }
+
+  _mergeMetadataLines(...lineGroups) {
+    const merged = lineGroups.flat().filter(Boolean);
+    return merged.length > 0 ? merged : undefined;
+  }
+
   /**
    * Normalize a function name for case-insensitive lookup.
    */
@@ -212,15 +245,21 @@ class TreeBuilder {
       const funcQueueName = funcDef?.queueName;
       const displayName = this._getDisplayName(ref);
 
-      let resolvedProps = {};
-      if (this.asyncResolver) {
-        // Pass the effective queueName to resolver: ref's queueName > function's queueName
-        const effectiveQueueName = queueName || funcQueueName;
-        resolvedProps = await this.asyncResolver(ref, effectiveQueueName) || {};
-      }
+      // Pass the effective queueName to resolver: ref's queueName > function's queueName
+      const effectiveQueueName = queueName || funcQueueName;
+      const { resolvedProps, errorMetadataLines } = await this._resolveExternalProps(
+        this.asyncResolver,
+        'asyncResolver',
+        [ref, effectiveQueueName]
+      );
 
       // Priority: resolver > ref's queueName > function's queueName > default (use displayName for default)
       const finalQueueName = resolvedProps.queueName || queueName || funcQueueName || `${displayName}_queue`;
+      const metadataLines = this._mergeMetadataLines(
+        errorMetadataLines,
+        existingProps.metadata_lines,
+        resolvedProps.metadata_lines
+      );
 
       return this._applyLogMetadataLine({
         name: finalQueueName,
@@ -228,6 +267,7 @@ class TreeBuilder {
         ...existingProps,
         ...resolvedProps,
         queueName: undefined, // clean up, name is already set
+        ...(metadataLines ? { metadata_lines: metadataLines } : {}),
         children: [await this._resolveAndCacheFunction(ref, visited, path)]
       });
     }
@@ -236,19 +276,21 @@ class TreeBuilder {
     if (child.topicPublish) {
       const { ref, topicName, topicPublish: _, queueName, ...existingProps } = child;
       const effectiveTopicName = topicName || 'unknown topic';
-      let resolvedProps = {};
-      if (this.topicPublishResolver) {
-        try {
-          resolvedProps = await this.topicPublishResolver(effectiveTopicName, queueName) || {};
-        } catch (_error) {
-          resolvedProps = {};
-        }
-      }
+      const { resolvedProps, errorMetadataLines } = await this._resolveExternalProps(
+        this.topicPublishResolver,
+        'topicPublishResolver',
+        [effectiveTopicName, queueName]
+      );
 
       // Merge, resolver props override existing, but existing queueName is fallback
       const finalQueueName = resolvedProps.queueName
         || queueName
         || (topicName ? `${topicName}_queue` : 'unknown topic');
+      const metadataLines = this._mergeMetadataLines(
+        errorMetadataLines,
+        existingProps.metadata_lines,
+        resolvedProps.metadata_lines
+      );
 
       return this._applyLogMetadataLine({
         name: finalQueueName,
@@ -256,6 +298,7 @@ class TreeBuilder {
         ...existingProps,
         ...resolvedProps,
         queueName: undefined, // clean up, name is already set
+        ...(metadataLines ? { metadata_lines: metadataLines } : {}),
         //children: [await this._resolveAndCacheFunction(ref, visited, path)]
       });
     }
@@ -293,21 +336,28 @@ class TreeBuilder {
       const funcQueueName = funcDef?.queueName;
       const displayName = this._getDisplayName(ref);
 
-      let resolvedProps = {};
-      if (this.asyncResolver) {
-        // Pass the effective queueName to resolver: ref's queueName > function's queueName
-        const effectiveQueueName = queueName || funcQueueName;
-        resolvedProps = await this.asyncResolver(ref, effectiveQueueName) || {};
-      }
+      // Pass the effective queueName to resolver: ref's queueName > function's queueName
+      const effectiveQueueName = queueName || funcQueueName;
+      const { resolvedProps, errorMetadataLines } = await this._resolveExternalProps(
+        this.asyncResolver,
+        'asyncResolver',
+        [ref, effectiveQueueName]
+      );
 
       // Priority: resolver > ref's queueName > function's queueName > default (use displayName for default)
       const finalQueueName = resolvedProps.queueName || queueName || funcQueueName || `${displayName}_queue`;
+      const metadataLines = this._mergeMetadataLines(
+        errorMetadataLines,
+        queueProps.metadata_lines,
+        resolvedProps.metadata_lines
+      );
 
       return this._applyLogMetadataLine({
         name: finalQueueName,
         type: 'timer',
         ...queueProps,
         ...resolvedProps,
+        ...(metadataLines ? { metadata_lines: metadataLines } : {}),
         children: [await this._getFunctionWithCycleCheck(ref, visited, path)]
       });
     }
@@ -316,20 +366,27 @@ class TreeBuilder {
     if (node.topicPublish) {
       const { ref, topicName, topicPublish: _, queueName, ...queueProps } = node;
       const effectiveTopicName = topicName || 'unknown topic';
-      let resolvedProps = {};
-      if (this.topicPublishResolver) {
-        resolvedProps = await this.topicPublishResolver(effectiveTopicName, queueName) || {};
-      }
+      const { resolvedProps, errorMetadataLines } = await this._resolveExternalProps(
+        this.topicPublishResolver,
+        'topicPublishResolver',
+        [effectiveTopicName, queueName]
+      );
 
       const finalQueueName = resolvedProps.queueName
         || queueName
         || (topicName ? `${topicName}_queue` : 'unknown topic');
+      const metadataLines = this._mergeMetadataLines(
+        errorMetadataLines,
+        queueProps.metadata_lines,
+        resolvedProps.metadata_lines
+      );
 
       return this._applyLogMetadataLine({
         name: finalQueueName,
         type: 'topic',
         ...queueProps,
         ...resolvedProps,
+        ...(metadataLines ? { metadata_lines: metadataLines } : {}),
         //children: [this._getFunctionWithCycleCheck(ref, visited, path)]
       });
     }
