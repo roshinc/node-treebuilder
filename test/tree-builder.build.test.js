@@ -214,6 +214,29 @@ describe('TreeBuilder', () => {
             assert.equal(method.children[0].name, 'helperFunc');
             assert.equal(method.children[0].type, 'function');
         });
+
+        for (const inlineType of ['timer', 'topic', 'queue']) {
+            it(`should handle inline ${inlineType} nodes without children in function definitions`, async () => {
+                builder.defineFunctions({
+                    parentFunc: {
+                        children: [{ type: inlineType, name: `${inlineType.toUpperCase()}.NODE` }]
+                    }
+                });
+
+                const app = {
+                    name: 'test-app',
+                    type: 'app',
+                    children: [{ ref: 'parentFunc' }]
+                };
+
+                const tree = await builder.build(app);
+                const inlineNode = tree.children[0].children[0];
+
+                assert.equal(inlineNode.type, inlineType);
+                assert.equal(inlineNode.name, `${inlineType.toUpperCase()}.NODE`);
+                assert.deepEqual(inlineNode.children, []);
+            });
+        }
     });
 
 

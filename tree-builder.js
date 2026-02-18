@@ -349,9 +349,10 @@ class TreeBuilder {
 
     // Inline queue
     if (child.type === 'queue' || child.type === 'timer' || child.type === 'topic') {
+      const childNodes = child.children || [];
       return this._applyLogMetadataLine({
         ...child,
-        children: await Promise.all(child.children?.map(c => this._resolveChild(c, visited, path))) || []
+        children: await Promise.all(childNodes.map(c => this._resolveChild(c, visited, path)))
       });
     }
 
