@@ -266,8 +266,8 @@ const builder = new TreeBuilder({
     filterEmptyUiServiceMethods: false,   // Omit ui-service-methods with no children (default: false)
     filterEmptyUiServices: false,         // Omit ui-services with no children (default: false)
     logNodeTypes: ['function', 'timer'],  // Node types that get a "Logs" metadata_line (default: null)
-    logLevel: 'error',                    // Winston level for default logger (default: 'error')
-    logger: customLogger                  // Optional Winston-compatible logger
+    logLevel: 'error',                    // Console logger level: 'error' | 'warn' | 'debug' (default: 'error')
+    logger: customLogger                  // Optional logger with error/warn/debug methods
 });
 ```
 
@@ -277,16 +277,26 @@ const builder = new TreeBuilder({
 | `filterEmptyUiServiceMethods` | `false` | When `true`, ui-service-method nodes with no children are omitted from output |
 | `filterEmptyUiServices` | `false` | When `true`, ui-services nodes with no children (after filtering methods) are omitted from output |
 | `logNodeTypes` | `null` | Array of node type strings (e.g., `['function', 'timer']`). Nodes whose type matches get a `{ text: 'Logs', clickable: true, data: { name, type, app } }` metadata_line prepended |
-| `logLevel` | `'error'` | Log level used when TreeBuilder creates its default Winston logger |
-| `logger` | `null` | Custom logger (`error`, `warn`, `debug` methods). When provided, `logLevel` is ignored |
+| `logLevel` | `'error'` | Log level for the built-in console logger (`'error'`, `'warn'`, or `'debug'`). Ignored when a custom `logger` is provided |
+| `logger` | `null` | Custom logger object with `error`, `warn`, `debug` methods. When provided, `logLevel` is ignored |
 
 #### Logging
 
-TreeBuilder uses Winston for operational logging:
+TreeBuilder includes a lightweight console-based logger with no external dependencies. Log output is controlled by the `logLevel` option or the `TREE_BUILDER_LOG_LEVEL` environment variable:
 
-- `error`: external resolver failures (`asyncResolver`, `topicPublishResolver`)
+- `error` (default): resolver failures
 - `warn`: unresolved function references
-- `debug`: build start and completion
+- `debug`: build start/completion
+
+```javascript
+// Enable all log output
+const builder = new TreeBuilder({ logLevel: 'debug' });
+
+// Or via environment variable
+// TREE_BUILDER_LOG_LEVEL=debug node my-app.js
+```
+
+**Custom logger:** Inject any object with `error`, `warn`, and `debug` methods:
 
 ```javascript
 import { createLogger, format, transports } from 'winston';

@@ -1,9 +1,8 @@
 /**
  * Tree Builder Utility
  */
-import { createLogger, format, transports } from 'winston';
-
 const DEFAULT_LOG_LEVEL = process.env.TREE_BUILDER_LOG_LEVEL || 'error';
+const LOG_LEVELS = { error: 0, warn: 1, debug: 2 };
 
 class TreeBuilder {
   constructor(config = {}) {
@@ -21,7 +20,7 @@ class TreeBuilder {
     this.inFlightResolutions = new Map(); // tracks promises for in-flight async function resolutions keyed by function and visited context, allowing concurrent callers to share the same promise and avoid duplicate work
     this.asyncResolver = null; // resolver to get the queue stats
     this.topicPublishResolver = null;
-    this.logger = logger || TreeBuilder.createLogger({ level: logLevel });
+    this.logger = logger || TreeBuilder.createDefaultLogger({ level: logLevel });
     // Config with defaults
     this.config = {
       unresolvedSeverity, // 'error' or 'warning'
@@ -31,17 +30,20 @@ class TreeBuilder {
     };
   }
 
-  static createLogger({ level = DEFAULT_LOG_LEVEL } = {}) {
-    return createLogger({
-      level,
-      defaultMeta: { component: 'TreeBuilder' },
-      format: format.combine(
-        format.timestamp(),
-        format.errors({ stack: true }),
-        format.json()
-      ),
-      transports: [new transports.Console()]
-    });
+  static createDefaultLogger({ level = DEFAULT_LOG_LEVEL } = {}) {
+    const threshold = LOG_LEVELS[level] ?? LOG_LEVELS.error;
+    const noop = () => {};
+    return {
+      error: threshold >= LOG_LEVELS.error
+        ? (message, meta) => console.error(`[TreeBuilder] ${message}`, meta)
+        : noop,
+      warn: threshold >= LOG_LEVELS.warn
+        ? (message, meta) => console.warn(`[TreeBuilder] ${message}`, meta)
+        : noop,
+      debug: threshold >= LOG_LEVELS.debug
+        ? (message, meta) => console.debug(`[TreeBuilder] ${message}`, meta)
+        : noop,
+    };
   }
 
   setAsyncResolver(resolver) {
