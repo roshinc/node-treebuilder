@@ -1,21 +1,47 @@
 /**
  * Tree Builder Utility
  */
+import { createLogger, format, transports } from 'winston';
+
+const DEFAULT_LOG_LEVEL = process.env.TREE_BUILDER_LOG_LEVEL || 'error';
 
 class TreeBuilder {
   constructor(config = {}) {
+    const {
+      unresolvedSeverity = 'warning',
+      filterEmptyUiServiceMethods = false,
+      filterEmptyUiServices = false,
+      logNodeTypes = null,
+      logger,
+      logLevel = DEFAULT_LOG_LEVEL
+    } = config;
+
     this.functionDefs = new Map();      // registry of function definitions
     this.resolvedFunctions = new Map(); // cache of resolved function subtrees
     this.inFlightResolutions = new Map(); // tracks promises for in-flight async function resolutions keyed by function and visited context, allowing concurrent callers to share the same promise and avoid duplicate work
     this.asyncResolver = null; // resolver to get the queue stats
     this.topicPublishResolver = null;
+    this.logger = logger || TreeBuilder.createLogger({ level: logLevel });
     // Config with defaults
     this.config = {
-      unresolvedSeverity: config.unresolvedSeverity || 'warning', // 'error' or 'warning'
-      filterEmptyUiServiceMethods: config.filterEmptyUiServiceMethods || false, // omit ui-service-methods with no children
-      filterEmptyUiServices: config.filterEmptyUiServices || false, // omit ui-services with no children (after filtering methods)
-      logNodeTypes: config.logNodeTypes || null // e.g., ['function', 'timer'] - node types that get a "Logs" metadata_line
+      unresolvedSeverity, // 'error' or 'warning'
+      filterEmptyUiServiceMethods, // omit ui-service-methods with no children
+      filterEmptyUiServices, // omit ui-services with no children (after filtering methods)
+      logNodeTypes // e.g., ['function', 'timer'] - node types that get a "Logs" metadata_line
     };
+  }
+
+  static createLogger({ level = DEFAULT_LOG_LEVEL } = {}) {
+    return createLogger({
+      level,
+      defaultMeta: { component: 'TreeBuilder' },
+      format: format.combine(
+        format.timestamp(),
+        format.errors({ stack: true }),
+        format.json()
+      ),
+      transports: [new transports.Console()]
+    });
   }
 
   setAsyncResolver(resolver) {
@@ -36,6 +62,13 @@ class TreeBuilder {
     }];
   }
 
+  _log(level, message, meta = {}) {
+    const logFn = this.logger?.[level];
+    if (typeof logFn === 'function') {
+      logFn.call(this.logger, message, meta);
+    }
+  }
+
   async _resolveExternalProps(resolver, resolverName, args) {
     if (!resolver) {
       return { resolvedProps: {}, errorMetadataLines: [] };
@@ -48,7 +81,7 @@ class TreeBuilder {
       }
       return { resolvedProps: result, errorMetadataLines: [] };
     } catch (error) {
-      console.error(`[TreeBuilder] ${resolverName} failed`, error);
+      this._log('error', `${resolverName} failed`, { resolverName, args, error });
       return {
         resolvedProps: {},
         errorMetadataLines: this._createResolverErrorMetadataLines(resolverName, error)
@@ -101,13 +134,21 @@ class TreeBuilder {
   }
 
   async build(rootStructure) {
+    this._log('debug', 'Starting tree build', {
+      rootName: rootStructure?.name,
+      definedFunctionCount: this.functionDefs.size
+    });
     // Clear cache for fresh build
     this.resolvedFunctions.clear();
     this.inFlightResolutions.clear();
     // First pass: resolve all functions (builds cache)
     await this._preResolveAllFunctions();
     // Second pass: build tree using cached functions
-    return await this._buildNode(rootStructure);
+    const tree = await this._buildNode(rootStructure);
+    this._log('debug', 'Completed tree build', {
+      resolvedFunctionContexts: this.resolvedFunctions.size
+    });
+    return tree;
   }
 
   /**
@@ -168,6 +209,7 @@ class TreeBuilder {
     const def = this.functionDefs.get(normalizedName);
     if (!def) {
       // Undefined function becomes error/warning node
+      this._log('warn', 'Unresolved function reference', { ref: name });
       const unresolvedNode = {
         name: `dependency to ${name} could not be resolved so the tree may be incomplete`,
         type: this.config.unresolvedSeverity,

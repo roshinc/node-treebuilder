@@ -15,5 +15,8 @@
     "functions"
   ],
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "dependencies": {
+    "winston": "^3.17.0"
+  }
 }

@@ -296,35 +296,33 @@ describe('TreeBuilder', () => {
         });
 
         it('should log and annotate async nodes when async resolver throws', async () => {
+            const errorLogs = [];
+            builder = new TreeBuilder({
+                logger: {
+                    error: (message, meta) => errorLogs.push({ message, meta })
+                }
+            });
+
             builder.defineFunctions({
                 asyncFunc: {}
             });
 
-            const consoleErrorOriginal = console.error;
-            const consoleErrors = [];
-            console.error = (...args) => {
-                consoleErrors.push(args);
+            builder.setAsyncResolver(() => {
+                throw new Error('async resolver boom');
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{ ref: 'asyncFunc', async: true, queueName: 'ORIGINAL.QUEUE' }]
             };
 
-            try {
-                builder.setAsyncResolver(() => {
-                    throw new Error('async resolver boom');
-                });
-
-                const app = {
-                    name: 'test-app',
-                    type: 'app',
-                    children: [{ ref: 'asyncFunc', async: true, queueName: 'ORIGINAL.QUEUE' }]
-                };
-
-                const tree = await builder.build(app);
-                assert.equal(tree.children[0].name, 'ORIGINAL.QUEUE');
-                assert.equal(tree.children[0].children[0].name, 'asyncFunc');
-                assert.ok(tree.children[0].metadata_lines.some(line => line.text.includes('asyncResolver errored out')));
-                assert.ok(consoleErrors.length > 0);
-            } finally {
-                console.error = consoleErrorOriginal;
-            }
+            const tree = await builder.build(app);
+            assert.equal(tree.children[0].name, 'ORIGINAL.QUEUE');
+            assert.equal(tree.children[0].children[0].name, 'asyncFunc');
+            assert.ok(tree.children[0].metadata_lines.some(line => line.text.includes('asyncResolver errored out')));
+            assert.ok(errorLogs.length > 0);
+            assert.equal(errorLogs[0].message, 'asyncResolver failed');
         });
     });
 
@@ -388,30 +386,28 @@ describe('TreeBuilder', () => {
         });
 
         it('should log and annotate topic nodes when topic publish resolver throws', async () => {
-            const consoleErrorOriginal = console.error;
-            const consoleErrors = [];
-            console.error = (...args) => {
-                consoleErrors.push(args);
+            const errorLogs = [];
+            builder = new TreeBuilder({
+                logger: {
+                    error: (message, meta) => errorLogs.push({ message, meta })
+                }
+            });
+
+            builder.setTopicPublishResolver(() => {
+                throw new Error('topic resolver boom');
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{ topicName: 'myTopic', topicPublish: true, queueName: 'TOPIC.ORIGINAL.QUEUE' }]
             };
 
-            try {
-                builder.setTopicPublishResolver(() => {
-                    throw new Error('topic resolver boom');
-                });
-
-                const app = {
-                    name: 'test-app',
-                    type: 'app',
-                    children: [{ topicName: 'myTopic', topicPublish: true, queueName: 'TOPIC.ORIGINAL.QUEUE' }]
-                };
-
-                const tree = await builder.build(app);
-                assert.equal(tree.children[0].name, 'TOPIC.ORIGINAL.QUEUE');
-                assert.ok(tree.children[0].metadata_lines.some(line => line.text.includes('topicPublishResolver errored out')));
-                assert.ok(consoleErrors.length > 0);
-            } finally {
-                console.error = consoleErrorOriginal;
-            }
+            const tree = await builder.build(app);
+            assert.equal(tree.children[0].name, 'TOPIC.ORIGINAL.QUEUE');
+            assert.ok(tree.children[0].metadata_lines.some(line => line.text.includes('topicPublishResolver errored out')));
+            assert.ok(errorLogs.length > 0);
+            assert.equal(errorLogs[0].message, 'topicPublishResolver failed');
         });
 
         it('should create topic nodes for app-level topicPublish refs', async () => {

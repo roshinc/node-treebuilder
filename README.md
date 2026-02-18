@@ -265,7 +265,9 @@ const builder = new TreeBuilder({
     unresolvedSeverity: 'warning',        // 'error' or 'warning' (default: 'warning')
     filterEmptyUiServiceMethods: false,   // Omit ui-service-methods with no children (default: false)
     filterEmptyUiServices: false,         // Omit ui-services with no children (default: false)
-    logNodeTypes: ['function', 'timer']   // Node types that get a "Logs" metadata_line (default: null)
+    logNodeTypes: ['function', 'timer'],  // Node types that get a "Logs" metadata_line (default: null)
+    logLevel: 'error',                    // Winston level for default logger (default: 'error')
+    logger: customLogger                  // Optional Winston-compatible logger
 });
 ```
 
@@ -275,6 +277,28 @@ const builder = new TreeBuilder({
 | `filterEmptyUiServiceMethods` | `false` | When `true`, ui-service-method nodes with no children are omitted from output |
 | `filterEmptyUiServices` | `false` | When `true`, ui-services nodes with no children (after filtering methods) are omitted from output |
 | `logNodeTypes` | `null` | Array of node type strings (e.g., `['function', 'timer']`). Nodes whose type matches get a `{ text: 'Logs', clickable: true, data: { name, type, app } }` metadata_line prepended |
+| `logLevel` | `'error'` | Log level used when TreeBuilder creates its default Winston logger |
+| `logger` | `null` | Custom logger (`error`, `warn`, `debug` methods). When provided, `logLevel` is ignored |
+
+#### Logging
+
+TreeBuilder uses Winston for operational logging:
+
+- `error`: external resolver failures (`asyncResolver`, `topicPublishResolver`)
+- `warn`: unresolved function references
+- `debug`: build start and completion
+
+```javascript
+import { createLogger, format, transports } from 'winston';
+
+const logger = createLogger({
+    level: 'debug',
+    format: format.combine(format.timestamp(), format.json()),
+    transports: [new transports.Console()]
+});
+
+const builder = new TreeBuilder({ logger });
+```
 
 **Filtering Example:**
 
