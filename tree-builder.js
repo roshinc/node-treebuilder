@@ -223,7 +223,7 @@ class TreeBuilder {
 
     const resolvePromise = (async () => {
       // Use displayName from definition for output
-      const { children, app, queueName, displayName, ...props } = def;
+      const { children, app, queueName, displayName, usesLegacyGatewayHttpClient, ...props } = def;
       const outputName = displayName || name;
 
       const newVisited = new Set(visited);
@@ -253,6 +253,12 @@ class TreeBuilder {
         resolved.children = await Promise.all(
           children.map(child => this._resolveChild(child, newVisited, newPath))
         );
+      }
+
+      // Append "SMART Call Over HTTPS" leaf if usesLegacyGatewayHttpClient is true
+      if (usesLegacyGatewayHttpClient === true) {
+        if (!resolved.children) resolved.children = [];
+        resolved.children.push({ name: 'SMART Call Over HTTPS', type: 'smart' });
       }
 
       // Apply "Logs" metadata_line if this node type is configured for it
@@ -436,10 +442,16 @@ class TreeBuilder {
       });
     }
 
-    // Copy node
-    const result = { ...node };
+    // Copy node, extracting usesLegacyGatewayHttpClient so it doesn't appear in output
+    const { usesLegacyGatewayHttpClient, ...nodeWithoutFlag } = node;
+    const result = { ...nodeWithoutFlag };
 
-    if (!node.children) return this._applyLogMetadataLine(result);
+    if (!node.children) {
+      if (usesLegacyGatewayHttpClient === true) {
+        result.children = [{ name: 'SMART Call Over HTTPS', type: 'smart' }];
+      }
+      return this._applyLogMetadataLine(result);
+    }
 
     // Track path for ui-service-method and function types
     let newVisited = visited;
@@ -460,6 +472,11 @@ class TreeBuilder {
     ));
     // Filter out null children (nodes that were filtered out)
     result.children = resolvedChildren.filter(child => child !== null);
+
+    // Append "SMART Call Over HTTPS" leaf if usesLegacyGatewayHttpClient is true
+    if (usesLegacyGatewayHttpClient === true) {
+      result.children.push({ name: 'SMART Call Over HTTPS', type: 'smart' });
+    }
 
     // Filter empty ui-service-methods if configured
     if (this.config.filterEmptyUiServiceMethods && node.type === 'ui-services') {

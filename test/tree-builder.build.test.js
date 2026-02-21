@@ -489,4 +489,273 @@ describe('TreeBuilder', () => {
     });
 
 
+    describe('usesLegacyGatewayHttpClient', () => {
+        it('should append SMART child to function with usesLegacyGatewayHttpClient: true', async () => {
+            builder.defineFunctions({
+                legacyFunc: {
+                    usesLegacyGatewayHttpClient: true,
+                    children: [ref('childFunc')]
+                },
+                childFunc: {}
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{ ref: 'legacyFunc' }]
+            };
+
+            const tree = await builder.build(app);
+            const func = tree.children[0];
+            assert.equal(func.children.length, 2);
+            assert.equal(func.children[0].name, 'childFunc');
+            assert.equal(func.children[0].type, 'function');
+            assert.equal(func.children[1].name, 'SMART Call Over HTTPS');
+            assert.equal(func.children[1].type, 'smart');
+            assert.equal(func.usesLegacyGatewayHttpClient, undefined);
+        });
+
+        it('should add SMART child to leaf function with usesLegacyGatewayHttpClient: true', async () => {
+            builder.defineFunctions({
+                legacyLeaf: {
+                    usesLegacyGatewayHttpClient: true
+                }
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{ ref: 'legacyLeaf' }]
+            };
+
+            const tree = await builder.build(app);
+            const func = tree.children[0];
+            assert.equal(func.children.length, 1);
+            assert.equal(func.children[0].name, 'SMART Call Over HTTPS');
+            assert.equal(func.children[0].type, 'smart');
+        });
+
+        it('should not append SMART child when usesLegacyGatewayHttpClient is false', async () => {
+            builder.defineFunctions({
+                normalFunc: {
+                    usesLegacyGatewayHttpClient: false,
+                    children: [ref('childFunc')]
+                },
+                childFunc: {}
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{ ref: 'normalFunc' }]
+            };
+
+            const tree = await builder.build(app);
+            const func = tree.children[0];
+            assert.equal(func.children.length, 1);
+            assert.equal(func.children[0].name, 'childFunc');
+            assert.equal(func.usesLegacyGatewayHttpClient, undefined);
+        });
+
+        it('should not append SMART child when usesLegacyGatewayHttpClient is omitted', async () => {
+            builder.defineFunctions({
+                normalFunc: {
+                    children: [ref('childFunc')]
+                },
+                childFunc: {}
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{ ref: 'normalFunc' }]
+            };
+
+            const tree = await builder.build(app);
+            const func = tree.children[0];
+            assert.equal(func.children.length, 1);
+            assert.equal(func.usesLegacyGatewayHttpClient, undefined);
+        });
+
+        it('should append SMART child to ui-service-method with usesLegacyGatewayHttpClient: true', async () => {
+            builder.defineFunctions({
+                helperFunc: {}
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{
+                    name: 'ServiceGroup',
+                    type: 'ui-services',
+                    children: [{
+                        name: 'method1',
+                        type: 'ui-service-method',
+                        usesLegacyGatewayHttpClient: true,
+                        children: [{ ref: 'helperFunc' }]
+                    }]
+                }]
+            };
+
+            const tree = await builder.build(app);
+            const method = tree.children[0].children[0];
+            assert.equal(method.children.length, 2);
+            assert.equal(method.children[0].name, 'helperFunc');
+            assert.equal(method.children[0].type, 'function');
+            assert.equal(method.children[1].name, 'SMART Call Over HTTPS');
+            assert.equal(method.children[1].type, 'smart');
+            assert.equal(method.usesLegacyGatewayHttpClient, undefined);
+        });
+
+        it('should add SMART child to ui-service-method with no children but usesLegacyGatewayHttpClient: true', async () => {
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{
+                    name: 'ServiceGroup',
+                    type: 'ui-services',
+                    children: [{
+                        name: 'method1',
+                        type: 'ui-service-method',
+                        usesLegacyGatewayHttpClient: true
+                    }]
+                }]
+            };
+
+            const tree = await builder.build(app);
+            const method = tree.children[0].children[0];
+            assert.equal(method.children.length, 1);
+            assert.equal(method.children[0].name, 'SMART Call Over HTTPS');
+            assert.equal(method.children[0].type, 'smart');
+        });
+
+        it('should not append SMART child to ui-service-method with usesLegacyGatewayHttpClient: false', async () => {
+            builder.defineFunctions({
+                helperFunc: {}
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{
+                    name: 'ServiceGroup',
+                    type: 'ui-services',
+                    children: [{
+                        name: 'method1',
+                        type: 'ui-service-method',
+                        usesLegacyGatewayHttpClient: false,
+                        children: [{ ref: 'helperFunc' }]
+                    }]
+                }]
+            };
+
+            const tree = await builder.build(app);
+            const method = tree.children[0].children[0];
+            assert.equal(method.children.length, 1);
+            assert.equal(method.children[0].name, 'helperFunc');
+            assert.equal(method.usesLegacyGatewayHttpClient, undefined);
+        });
+
+        it('should create SMART child as a leaf node with no children property', async () => {
+            builder.defineFunctions({
+                legacyFunc: { usesLegacyGatewayHttpClient: true }
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{ ref: 'legacyFunc' }]
+            };
+
+            const tree = await builder.build(app);
+            const smartNode = tree.children[0].children[0];
+            assert.equal(smartNode.name, 'SMART Call Over HTTPS');
+            assert.equal(smartNode.type, 'smart');
+            assert.equal(smartNode.children, undefined);
+        });
+
+        it('should work alongside app field and metadata_lines on function defs', async () => {
+            builder.defineFunctions({
+                legacyWithApp: {
+                    app: 'MyApp',
+                    usesLegacyGatewayHttpClient: true,
+                    metadata_lines: [{ text: 'info' }]
+                }
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{ ref: 'legacyWithApp' }]
+            };
+
+            const tree = await builder.build(app);
+            const func = tree.children[0];
+            assert.equal(func.metadata_lines[0].text, 'MyApp');
+            assert.equal(func.children.length, 1);
+            assert.equal(func.children[0].name, 'SMART Call Over HTTPS');
+            assert.equal(func.children[0].type, 'smart');
+            assert.equal(func.usesLegacyGatewayHttpClient, undefined);
+            assert.equal(func.app, undefined);
+        });
+
+        it('should append SMART child in both sync and async usage of function with flag', async () => {
+            builder.defineFunctions({
+                legacyFunc: {
+                    usesLegacyGatewayHttpClient: true,
+                    queueName: 'LEGACY.QUEUE'
+                }
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [
+                    { ref: 'legacyFunc' },
+                    { ref: 'legacyFunc', async: true }
+                ]
+            };
+
+            const tree = await builder.build(app);
+            const syncFunc = tree.children[0];
+            assert.equal(syncFunc.children.length, 1);
+            assert.equal(syncFunc.children[0].type, 'smart');
+            const asyncWrapper = tree.children[1];
+            assert.equal(asyncWrapper.type, 'timer');
+            const asyncFunc = asyncWrapper.children[0];
+            assert.equal(asyncFunc.children.length, 1);
+            assert.equal(asyncFunc.children[0].type, 'smart');
+        });
+
+        it('should not filter out ui-service-method that has SMART child from usesLegacyGatewayHttpClient', async () => {
+            builder = new TreeBuilder({ filterEmptyUiServiceMethods: true });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{
+                    name: 'ServiceGroup',
+                    type: 'ui-services',
+                    children: [
+                        {
+                            name: 'emptyMethod',
+                            type: 'ui-service-method'
+                        },
+                        {
+                            name: 'legacyMethod',
+                            type: 'ui-service-method',
+                            usesLegacyGatewayHttpClient: true
+                        }
+                    ]
+                }]
+            };
+
+            const tree = await builder.build(app);
+            const services = tree.children[0];
+            assert.equal(services.children.length, 1);
+            assert.equal(services.children[0].name, 'legacyMethod');
+            assert.equal(services.children[0].children[0].type, 'smart');
+        });
+    });
+
 });
