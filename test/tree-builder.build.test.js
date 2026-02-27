@@ -4,7 +4,7 @@
 
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { TreeBuilder, ref, asyncRef } from '../tree-builder.js';
+import { TreeBuilder, LogDecider, ref, asyncRef } from '../tree-builder.js';
 
 describe('TreeBuilder', () => {
     let builder;
@@ -134,7 +134,8 @@ describe('TreeBuilder', () => {
         });
 
         it('should resolve sync+async refs to same function consistently when async children are involved', async () => {
-            const raceBuilder = new TreeBuilder({ logNodeTypes: ['function', 'timer'] });
+            const raceBuilder = new TreeBuilder();
+            raceBuilder.setLogDecider(new LogDecider(['function', 'timer']));
             raceBuilder.defineFunctions({
                 A: { children: [ref('B'), asyncRef('B')] },
                 B: { children: [asyncRef('C')] },
@@ -160,6 +161,12 @@ describe('TreeBuilder', () => {
             assert.equal(syncB.type, 'function');
             assert.equal(asyncWrapper.type, 'timer');
             assert.equal(asyncB.type, 'function');
+            assert.ok(syncB.metadata_lines, 'Sync function should include Logs metadata');
+            assert.ok(asyncB.metadata_lines, 'Async function should include Logs metadata');
+            assert.equal(syncB.metadata_lines[0].text, 'Logs');
+            assert.equal(asyncB.metadata_lines[0].text, 'Logs');
+            assert.ok(asyncWrapper.metadata_lines, 'Timer wrapper should include Logs metadata');
+            assert.equal(asyncWrapper.metadata_lines[0].text, 'Logs');
             assert.deepEqual(syncB.metadata_lines, asyncB.metadata_lines);
         });
 
@@ -962,3 +969,4 @@ describe('TreeBuilder', () => {
     });
 
 });
+
