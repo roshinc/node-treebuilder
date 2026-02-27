@@ -223,7 +223,7 @@ class TreeBuilder {
 
     const resolvePromise = (async () => {
       // Use displayName from definition for output
-      const { children, app, queueName, displayName, usesLegacyGatewayHttpClient, ...props } = def;
+      const { children, app, queueName, displayName, usesLegacyGatewayHttpClient, ctgInvoke, ...props } = def;
       const outputName = displayName || name;
 
       const newVisited = new Set(visited);
@@ -244,19 +244,19 @@ class TreeBuilder {
       // Create node (use displayName for the output name)
       const resolved = {
         name: outputName,
-        type: 'function',
+        type: ctgInvoke === true ? 'ctg' : 'function',
         ...finalProps
       };
 
       // Resolve children
-      if (children && children.length > 0) {
+      if (children && children.length > 0 && ctgInvoke !== true) {
         resolved.children = await Promise.all(
           children.map(child => this._resolveChild(child, newVisited, newPath))
         );
       }
 
-      // Append "SMART Call Over HTTPS" leaf if usesLegacyGatewayHttpClient is true
-      if (usesLegacyGatewayHttpClient === true) {
+      // Append "SMART Call Over HTTPS" leaf if usesLegacyGatewayHttpClient is true (not for ctg nodes, which are always leaves)
+      if (usesLegacyGatewayHttpClient === true && ctgInvoke !== true) {
         if (!resolved.children) resolved.children = [];
         resolved.children.push({ name: 'SMART Call Over HTTPS', type: 'smart' });
       }
@@ -443,7 +443,7 @@ class TreeBuilder {
     }
 
     // Copy node, extracting usesLegacyGatewayHttpClient so it doesn't appear in output
-    const { usesLegacyGatewayHttpClient, ...nodeWithoutFlag } = node;
+    const { usesLegacyGatewayHttpClient, ctgInvoke, ...nodeWithoutFlag } = node;
     const result = { ...nodeWithoutFlag };
 
     if (!node.children) {

@@ -758,4 +758,207 @@ describe('TreeBuilder', () => {
         });
     });
 
+
+    describe('ctgInvoke', () => {
+        it('should resolve ctgInvoke: true function as type ctg leaf', async () => {
+            builder.defineFunctions({
+                ctgFunc: {
+                    ctgInvoke: true
+                }
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{ ref: 'ctgFunc' }]
+            };
+
+            const tree = await builder.build(app);
+            const func = tree.children[0];
+            assert.equal(func.name, 'ctgFunc');
+            assert.equal(func.type, 'ctg');
+            assert.equal(func.children, undefined);
+        });
+
+        it('should resolve ctgInvoke: false function as type function', async () => {
+            builder.defineFunctions({
+                normalFunc: {
+                    ctgInvoke: false,
+                    children: [ref('childFunc')]
+                },
+                childFunc: {}
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{ ref: 'normalFunc' }]
+            };
+
+            const tree = await builder.build(app);
+            const func = tree.children[0];
+            assert.equal(func.type, 'function');
+            assert.equal(func.children.length, 1);
+            assert.equal(func.children[0].name, 'childFunc');
+        });
+
+        it('should resolve function without ctgInvoke as type function', async () => {
+            builder.defineFunctions({
+                normalFunc: {
+                    children: [ref('childFunc')]
+                },
+                childFunc: {}
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{ ref: 'normalFunc' }]
+            };
+
+            const tree = await builder.build(app);
+            const func = tree.children[0];
+            assert.equal(func.type, 'function');
+            assert.equal(func.ctgInvoke, undefined);
+        });
+
+        it('should strip ctgInvoke from output node', async () => {
+            builder.defineFunctions({
+                ctgFunc: {
+                    ctgInvoke: true
+                }
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{ ref: 'ctgFunc' }]
+            };
+
+            const tree = await builder.build(app);
+            const func = tree.children[0];
+            assert.equal(func.type, 'ctg');
+            assert.equal(func.ctgInvoke, undefined);
+        });
+
+        it('should wrap ctg function in timer when used async', async () => {
+            builder.defineFunctions({
+                ctgFunc: {
+                    ctgInvoke: true,
+                    queueName: 'CTG.QUEUE'
+                }
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{ ref: 'ctgFunc', async: true }]
+            };
+
+            const tree = await builder.build(app);
+            const timer = tree.children[0];
+            assert.equal(timer.type, 'timer');
+            assert.equal(timer.name, 'CTG.QUEUE');
+            const innerFunc = timer.children[0];
+            assert.equal(innerFunc.type, 'ctg');
+            assert.equal(innerFunc.name, 'ctgFunc');
+            assert.equal(innerFunc.children, undefined);
+        });
+
+        it('should produce ctg leaf in both sync and async usage', async () => {
+            builder.defineFunctions({
+                ctgFunc: {
+                    ctgInvoke: true,
+                    queueName: 'CTG.QUEUE'
+                }
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [
+                    { ref: 'ctgFunc' },
+                    { ref: 'ctgFunc', async: true }
+                ]
+            };
+
+            const tree = await builder.build(app);
+            const syncFunc = tree.children[0];
+            assert.equal(syncFunc.type, 'ctg');
+            assert.equal(syncFunc.children, undefined);
+
+            const asyncWrapper = tree.children[1];
+            assert.equal(asyncWrapper.type, 'timer');
+            const asyncFunc = asyncWrapper.children[0];
+            assert.equal(asyncFunc.type, 'ctg');
+            assert.equal(asyncFunc.children, undefined);
+        });
+
+        it('should work alongside app field and metadata_lines', async () => {
+            builder.defineFunctions({
+                ctgWithApp: {
+                    ctgInvoke: true,
+                    app: 'MyApp',
+                    metadata_lines: [{ text: 'info' }]
+                }
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{ ref: 'ctgWithApp' }]
+            };
+
+            const tree = await builder.build(app);
+            const func = tree.children[0];
+            assert.equal(func.type, 'ctg');
+            assert.equal(func.metadata_lines[0].text, 'MyApp');
+            assert.equal(func.metadata_lines[1].text, 'info');
+            assert.equal(func.children, undefined);
+            assert.equal(func.ctgInvoke, undefined);
+            assert.equal(func.app, undefined);
+        });
+
+        it('should ignore children defined on a ctgInvoke: true function', async () => {
+            builder.defineFunctions({
+                ctgFunc: {
+                    ctgInvoke: true,
+                    children: [ref('childFunc')]
+                },
+                childFunc: {}
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{ ref: 'ctgFunc' }]
+            };
+
+            const tree = await builder.build(app);
+            const func = tree.children[0];
+            assert.equal(func.type, 'ctg');
+            assert.equal(func.children, undefined);
+        });
+
+        it('should preserve displayName on ctg node', async () => {
+            builder.defineFunctions({
+                ctgfunc: {
+                    ctgInvoke: true,
+                    displayName: 'CTGFunc'
+                }
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{ ref: 'ctgfunc' }]
+            };
+
+            const tree = await builder.build(app);
+            const func = tree.children[0];
+            assert.equal(func.name, 'CTGFunc');
+            assert.equal(func.type, 'ctg');
+        });
+    });
+
 });
