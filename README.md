@@ -40,7 +40,7 @@ console.log(JSON.stringify(tree, null, 2));
 ### Using JavaScript Configuration
 
 ```javascript
-import { TreeBuilder, ref, asyncRef, topicPublishRef } from './tree-builder.js';
+import { TreeBuilder, LogDecider, ref, asyncRef, topicPublishRef } from './tree-builder.js';
 
 const builder = new TreeBuilder();
 
@@ -252,6 +252,9 @@ builder.defineFunctions(functionPoolObject);
 builder.setAsyncResolver((funcName, queueName) => ({ queueName, depth }));
 builder.setTopicPublishResolver((topicName, queueName) => ({ queueName }));
 
+// Set log decider for "Logs" metadata_lines
+builder.setLogDecider(new LogDecider(['function', 'timer']));
+
 // Build tree
 const tree = await builder.build(appStructure);
 ```
@@ -265,7 +268,6 @@ const builder = new TreeBuilder({
     unresolvedSeverity: 'warning',        // 'error' or 'warning' (default: 'warning')
     filterEmptyUiServiceMethods: false,   // Omit ui-service-methods with no children (default: false)
     filterEmptyUiServices: false,         // Omit ui-services with no children (default: false)
-    logNodeTypes: ['function', 'timer'],  // Node types that get a "Logs" metadata_line (default: null)
     logLevel: 'error',                    // Console logger level: 'error' | 'warn' | 'debug' (default: 'error')
     logger: customLogger                  // Optional logger with error/warn/debug methods
 });
@@ -276,7 +278,6 @@ const builder = new TreeBuilder({
 | `unresolvedSeverity` | `'warning'` | Type of node created for unresolved function references (`'error'` or `'warning'`) |
 | `filterEmptyUiServiceMethods` | `false` | When `true`, ui-service-method nodes with no children are omitted from output |
 | `filterEmptyUiServices` | `false` | When `true`, ui-services nodes with no children (after filtering methods) are omitted from output |
-| `logNodeTypes` | `null` | Array of node type strings (e.g., `['function', 'timer']`). Nodes whose type matches get a `{ text: 'Logs', clickable: true, data: { name, type, app } }` metadata_line prepended |
 | `logLevel` | `'error'` | Log level for the built-in console logger (`'error'`, `'warn'`, or `'debug'`). Ignored when a custom `logger` is provided |
 | `logger` | `null` | Custom logger object with `error`, `warn`, `debug` methods. When provided, `logLevel` is ignored |
 
@@ -340,13 +341,15 @@ const tree = await builder.build({
 // If all ui-service-methods are filtered out, the ui-services node itself is also omitted
 ```
 
-**Logs Metadata Line Example:**
+**LogDecider — "Logs" Metadata Line:**
+
+Use `setLogDecider()` to control which nodes get a `{ text: 'Logs', clickable: true, data: { name, type } }` metadata_line prepended. The `LogDecider` class accepts a list of node types (similar to the old `logNodeTypes` config):
 
 ```javascript
-// Add a "Logs" metadata_line to function and timer nodes
-const builder = new TreeBuilder({
-    logNodeTypes: ['function', 'timer']
-});
+import { TreeBuilder, LogDecider } from './tree-builder.js';
+
+const builder = new TreeBuilder();
+builder.setLogDecider(new LogDecider(['function', 'timer']));
 
 builder.defineFunctions({
     myFunc: { app: 'MyApp', children: [] }
@@ -357,6 +360,29 @@ const tree = await builder.build({
     children: [{ ref: 'myFunc' }]
 });
 // tree.children[0].metadata_lines[0] = { text: 'Logs', clickable: true, data: { name: 'myFunc', type: 'function', app: 'MyApp' } }
+```
+
+**Custom LogDecider subclass:**
+
+Subclass `LogDecider` to add conditional logic. The `decide(node, context)` method receives resolver context (`resolvedProps`, `resolverName`) so you can make decisions based on whether a resolver actually resolved the node:
+
+```javascript
+class MyLogDecider extends LogDecider {
+    decide(node, context = {}) {
+        if (!super.decide(node, context)) return false;
+        // Only log topic nodes if the resolver resolved a queueName
+        if (node.type === 'topic') {
+            return context.resolvedProps?.queueName != null;
+        }
+        return true;
+    }
+}
+
+const builder = new TreeBuilder();
+builder.setLogDecider(new MyLogDecider(['function', 'topic']));
+builder.setTopicPublishResolver((topicName) => {
+    // return { queueName: '...' } for resolved topics, or null for unresolved
+});
 ```
 
 ### JSON Loader

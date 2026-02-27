@@ -4,13 +4,22 @@
 const DEFAULT_LOG_LEVEL = process.env.TREE_BUILDER_LOG_LEVEL || 'error';
 const LOG_LEVELS = { error: 0, warn: 1, debug: 2 };
 
+class LogDecider {
+  constructor(nodeTypes = []) {
+    this.nodeTypes = new Set(nodeTypes);
+  }
+
+  decide(node, { resolvedProps, resolverName } = {}) {
+    return this.nodeTypes.has(node.type);
+  }
+}
+
 class TreeBuilder {
   constructor(config = {}) {
     const {
       unresolvedSeverity = 'warning',
       filterEmptyUiServiceMethods = false,
       filterEmptyUiServices = false,
-      logNodeTypes = null,
       logger,
       logLevel = DEFAULT_LOG_LEVEL
     } = config;
@@ -20,13 +29,13 @@ class TreeBuilder {
     this.inFlightResolutions = new Map(); // tracks promises for in-flight async function resolutions keyed by function and visited context, allowing concurrent callers to share the same promise and avoid duplicate work
     this.asyncResolver = null; // resolver to get the queue stats
     this.topicPublishResolver = null;
+    this.logDecider = null; // decides which nodes get a "Logs" metadata_line
     this.logger = logger || TreeBuilder.createDefaultLogger({ level: logLevel });
     // Config with defaults
     this.config = {
       unresolvedSeverity, // 'error' or 'warning'
       filterEmptyUiServiceMethods, // omit ui-service-methods with no children
-      filterEmptyUiServices, // omit ui-services with no children (after filtering methods)
-      logNodeTypes // e.g., ['function', 'timer'] - node types that get a "Logs" metadata_line
+      filterEmptyUiServices // omit ui-services with no children (after filtering methods)
     };
   }
 
@@ -53,6 +62,11 @@ class TreeBuilder {
 
   setTopicPublishResolver(resolver) {
     this.topicPublishResolver = resolver;
+    return this;
+  }
+
+  setLogDecider(decider) {
+    this.logDecider = decider;
     return this;
   }
 
@@ -261,8 +275,8 @@ class TreeBuilder {
         resolved.children.push({ name: 'SMART Call Over HTTPS', type: 'smart' });
       }
 
-      // Apply "Logs" metadata_line if this node type is configured for it
-      const finalResolved = this._applyLogMetadataLine(resolved, app ? { app } : {});
+      // Apply "Logs" metadata_line if the log decider approves
+      const finalResolved = this._applyLogMetadataLine(resolved, app ? { app } : {}, {});
       this.resolvedFunctions.set(cacheKey, finalResolved);
       return finalResolved;
     })();
@@ -319,7 +333,7 @@ class TreeBuilder {
         queueName: undefined, // clean up, name is already set
         ...(metadataLines ? { metadata_lines: metadataLines } : {}),
         children: [await this._resolveAndCacheFunction(ref, visited, path)]
-      });
+      }, {}, { resolvedProps, resolverName: 'asyncResolver' });
     }
 
     // Topic Publish reference = queue wrapper
@@ -350,7 +364,7 @@ class TreeBuilder {
         queueName: undefined, // clean up, name is already set
         ...(metadataLines ? { metadata_lines: metadataLines } : {}),
         //children: [await this._resolveAndCacheFunction(ref, visited, path)]
-      });
+      }, {}, { resolvedProps, resolverName: 'topicPublishResolver' });
     }
 
     // Inline queue
@@ -359,7 +373,7 @@ class TreeBuilder {
       return this._applyLogMetadataLine({
         ...child,
         children: await Promise.all(childNodes.map(c => this._resolveChild(c, visited, path)))
-      });
+      }, {}, {});
     }
 
     // Other inline node (shouldn't happen in function defs, but handle it)
@@ -410,7 +424,7 @@ class TreeBuilder {
         ...resolvedProps,
         ...(metadataLines ? { metadata_lines: metadataLines } : {}),
         children: [await this._getFunctionWithCycleCheck(ref, visited, path)]
-      });
+      }, {}, { resolvedProps, resolverName: 'asyncResolver' });
     }
 
     // Topic Publish reference = queue wrapper
@@ -439,7 +453,7 @@ class TreeBuilder {
         ...resolvedProps,
         ...(metadataLines ? { metadata_lines: metadataLines } : {}),
         //children: [this._getFunctionWithCycleCheck(ref, visited, path)]
-      });
+      }, {}, { resolvedProps, resolverName: 'topicPublishResolver' });
     }
 
     // Copy node, extracting usesLegacyGatewayHttpClient so it doesn't appear in output
@@ -450,7 +464,7 @@ class TreeBuilder {
       if (usesLegacyGatewayHttpClient === true) {
         result.children = [{ name: 'SMART Call Over HTTPS', type: 'smart' }];
       }
-      return this._applyLogMetadataLine(result);
+      return this._applyLogMetadataLine(result, {}, {});
     }
 
     // Track path for ui-service-method and function types
@@ -495,7 +509,7 @@ class TreeBuilder {
       }
     }
 
-    return this._applyLogMetadataLine(result);
+    return this._applyLogMetadataLine(result, {}, {});
   }
 
   /**
@@ -533,13 +547,14 @@ class TreeBuilder {
 
   /**
    * Conditionally prepend a "Logs" metadata_line to a node
-   * if its type is in the configured logNodeTypes list.
+   * if the configured LogDecider approves it.
    * Returns a new object (to avoid cache mutation), or the original if no modification needed.
    * @param {object} node - The node to potentially modify
    * @param {object} extraData - Additional data to include in the log metadata (e.g., { app })
+   * @param {object} context - Resolver context passed to LogDecider.decide() (e.g., { resolvedProps, resolverName })
    */
-  _applyLogMetadataLine(node, extraData = {}) {
-    if (!node || !this.config.logNodeTypes || !this.config.logNodeTypes.includes(node.type)) {
+  _applyLogMetadataLine(node, extraData = {}, context = {}) {
+    if (!node || !this.logDecider || !this.logDecider.decide(node, context)) {
       return node;
     }
     const logData = { name: node.name, type: node.type, ...extraData };
@@ -579,4 +594,4 @@ const ref = TreeBuilder.ref;
 const asyncRef = TreeBuilder.asyncRef;
 const topicPublishRef = TreeBuilder.topicPublishRef;
 
-export { TreeBuilder, ref, asyncRef, topicPublishRef };
+export { TreeBuilder, LogDecider, ref, asyncRef, topicPublishRef };
