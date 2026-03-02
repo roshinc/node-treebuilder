@@ -966,6 +966,123 @@ describe('TreeBuilder', () => {
             assert.equal(func.name, 'CTGFunc');
             assert.equal(func.type, 'ctg');
         });
+
+        it('should resolve inline ctgInvoke: true on a child ref as a ctg leaf (new format)', async () => {
+            builder.defineFunctions({
+                parentFunc: {
+                    children: [
+                        { syncRef: true, ctgRef: false, asyncRef: false, asyncCtgRef: false, topicRef: false, ref: 'childFunc' },
+                        { syncRef: false, ctgRef: true, asyncRef: false, asyncCtgRef: false, topicRef: false, ref: 'NDS001Z', ctgInvoke: true }
+                    ]
+                },
+                childFunc: {}
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{ ref: 'parentFunc' }]
+            };
+
+            const tree = await builder.build(app);
+            const parent = tree.children[0];
+            assert.equal(parent.name, 'parentFunc');
+            assert.equal(parent.type, 'function');
+            assert.equal(parent.children.length, 2);
+
+            const syncChild = parent.children[0];
+            assert.equal(syncChild.name, 'childFunc');
+            assert.equal(syncChild.type, 'function');
+
+            const ctgChild = parent.children[1];
+            assert.equal(ctgChild.name, 'NDS001Z');
+            assert.equal(ctgChild.type, 'ctg');
+            assert.equal(ctgChild.children, undefined);
+        });
+
+        it('should strip ctgRef/syncRef/asyncRef/asyncCtgRef/topicRef flags from inline ctg child output', async () => {
+            builder.defineFunctions({
+                parentFunc: {
+                    children: [
+                        { syncRef: false, ctgRef: true, asyncRef: false, asyncCtgRef: false, topicRef: false, ref: 'NDS001Z', ctgInvoke: true }
+                    ]
+                }
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{ ref: 'parentFunc' }]
+            };
+
+            const tree = await builder.build(app);
+            const ctgChild = tree.children[0].children[0];
+            assert.equal(ctgChild.name, 'NDS001Z');
+            assert.equal(ctgChild.type, 'ctg');
+            assert.equal(ctgChild.ctgInvoke, undefined);
+            assert.equal(ctgChild.ctgRef, undefined);
+            assert.equal(ctgChild.syncRef, undefined);
+            assert.equal(ctgChild.asyncRef, undefined);
+            assert.equal(ctgChild.asyncCtgRef, undefined);
+            assert.equal(ctgChild.topicRef, undefined);
+        });
+
+        it('should handle fwdlnsrjsearchfordln-style function with mixed syncRef and ctgRef children', async () => {
+            builder.defineFunctions({
+                retrieveiasdln: {},
+                retrievedupdln: {},
+                searchwttaxpayerinfobydln: {},
+                fwdlnsrjsearchfordln: {
+                    empty: false,
+                    app: 'dev-nims-empire-common',
+                    displayName: 'fwdlnsrjSearchForDLN',
+                    queueName: 'FWRK.PFQ',
+                    usesLegacyGatewayHttpClient: true,
+                    children: [
+                        { asyncCtgRef: false, syncRef: true, ctgRef: false, asyncRef: false, topicRef: false, ref: 'retrieveiasdln' },
+                        { asyncCtgRef: false, syncRef: true, ctgRef: false, asyncRef: false, topicRef: false, ref: 'retrievedupdln' },
+                        { asyncCtgRef: false, syncRef: true, ctgRef: false, asyncRef: false, topicRef: false, ref: 'searchwttaxpayerinfobydln' },
+                        { asyncCtgRef: false, syncRef: false, ctgRef: true, asyncRef: false, topicRef: false, ref: 'NDS001Z', ctgInvoke: true },
+                        { asyncCtgRef: false, syncRef: false, ctgRef: true, asyncRef: false, topicRef: false, ref: 'MC1181Z', ctgInvoke: true },
+                        { asyncCtgRef: false, syncRef: false, ctgRef: true, asyncRef: false, topicRef: false, ref: 'NAT181Z', ctgInvoke: true },
+                        { asyncCtgRef: false, syncRef: false, ctgRef: true, asyncRef: false, topicRef: false, ref: 'TZ0001Z', ctgInvoke: true }
+                    ]
+                }
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{ ref: 'fwdlnsrjsearchfordln' }]
+            };
+
+            const tree = await builder.build(app);
+            const func = tree.children[0];
+            assert.equal(func.name, 'fwdlnsrjSearchForDLN');
+            assert.equal(func.type, 'function');
+
+            // 3 sync children + 4 ctg children + 1 SMART (usesLegacyGatewayHttpClient)
+            assert.equal(func.children.length, 8);
+
+            assert.equal(func.children[0].name, 'retrieveiasdln');
+            assert.equal(func.children[0].type, 'function');
+            assert.equal(func.children[1].name, 'retrievedupdln');
+            assert.equal(func.children[1].type, 'function');
+            assert.equal(func.children[2].name, 'searchwttaxpayerinfobydln');
+            assert.equal(func.children[2].type, 'function');
+
+            assert.equal(func.children[3].name, 'NDS001Z');
+            assert.equal(func.children[3].type, 'ctg');
+            assert.equal(func.children[4].name, 'MC1181Z');
+            assert.equal(func.children[4].type, 'ctg');
+            assert.equal(func.children[5].name, 'NAT181Z');
+            assert.equal(func.children[5].type, 'ctg');
+            assert.equal(func.children[6].name, 'TZ0001Z');
+            assert.equal(func.children[6].type, 'ctg');
+
+            assert.equal(func.children[7].name, 'SMART Call Over HTTPS');
+            assert.equal(func.children[7].type, 'smart');
+        });
     });
 
 });

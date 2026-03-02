@@ -207,5 +207,77 @@
     "retrieveVoucher": {},
     "hasActiveWtPayroll": {},
     "hasPreExistingWTFiling": {},
-    "searchFormsByDocLctrNmbr": {}
+    "searchFormsByDocLctrNmbr": {},
+    "retrieveiasdln": {},
+    "retrievedupdln": {},
+    "searchwttaxpayerinfobydln": {},
+    "fwdlnsrjsearchfordln": {
+        "empty": false,
+        "app": "dev-nims-empire-common",
+        "displayName": "fwdlnsrjSearchForDLN",
+        "queueName": "FWRK.PFQ",
+        "usesLegacyGatewayHttpClient": true,
+        "children": [
+            {
+                "asyncCtgRef": false,
+                "syncRef": true,
+                "ctgRef": false,
+                "asyncRef": false,
+                "topicRef": false,
+                "ref": "retrieveiasdln"
+            },
+            {
+                "asyncCtgRef": false,
+                "syncRef": true,
+                "ctgRef": false,
+                "asyncRef": false,
+                "topicRef": false,
+                "ref": "retrievedupdln"
+            },
+            {
+                "asyncCtgRef": false,
+                "syncRef": true,
+                "ctgRef": false,
+                "asyncRef": false,
+                "topicRef": false,
+                "ref": "searchwttaxpayerinfobydln"
+            },
+            {
+                "asyncCtgRef": false,
+                "syncRef": false,
+                "ctgRef": true,
+                "asyncRef": false,
+                "topicRef": false,
+                "ref": "NDS001Z",
+                "ctgInvoke": true
+            },
+            {
+                "asyncCtgRef": false,
+                "syncRef": false,
+                "ctgRef": true,
+                "asyncRef": false,
+                "topicRef": false,
+                "ref": "MC1181Z",
+                "ctgInvoke": true
+            },
+            {
+                "asyncCtgRef": false,
+                "syncRef": false,
+                "ctgRef": true,
+                "asyncRef": false,
+                "topicRef": false,
+                "ref": "NAT181Z",
+                "ctgInvoke": true
+            },
+            {
+                "asyncCtgRef": false,
+                "syncRef": false,
+                "ctgRef": true,
+                "asyncRef": false,
+                "topicRef": false,
+                "ref": "TZ0001Z",
+                "ctgInvoke": true
+            }
+        ]
+    }
 }

@@ -293,6 +293,12 @@ class TreeBuilder {
    * Resolve a child node during pre-resolution phase.
    */
   async _resolveChild(child, visited, path) {
+    // Inline CTG reference (ctgInvoke: true on the child itself)
+    if (child.ref && child.ctgInvoke === true) {
+      const { ref, ctgInvoke, syncRef, asyncRef: _asyncRef, ctgRef, asyncCtgRef, topicRef, ...rest } = child;
+      return this._applyLogMetadataLine({ name: ref, type: 'ctg', ...rest }, {}, {});
+    }
+
     // Sync reference
     if (child.ref && !child.async && !child.topicPublish) {
       return this._resolveAndCacheFunction(child.ref, visited, path);
@@ -385,6 +391,12 @@ class TreeBuilder {
    * This phase handles app structure, ui-services, ui-service-methods.
    */
   async _buildNode(node, visited = new Set(), path = []) {
+    // Inline CTG reference (ctgInvoke: true on the node itself)
+    if (node.ref && node.ctgInvoke === true) {
+      const { ref, ctgInvoke, syncRef, asyncRef: _asyncRef, ctgRef, asyncCtgRef, topicRef, ...rest } = node;
+      return this._applyLogMetadataLine({ name: ref, type: 'ctg', ...rest }, {}, {});
+    }
+
     // Sync reference
     if (node.ref && !node.async && !node.topicPublish) {
       return await this._getFunctionWithCycleCheck(node.ref, visited, path);
