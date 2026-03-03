@@ -237,7 +237,7 @@ class TreeBuilder {
 
     const resolvePromise = (async () => {
       // Use displayName from definition for output
-      const { children, app, queueName, displayName, usesLegacyGatewayHttpClient, ctgInvoke, ...props } = def;
+      const { children, app, queueName, displayName, usesLegacyGatewayHttpClient, ctg, ...props } = def;
       const outputName = displayName || name;
 
       const newVisited = new Set(visited);
@@ -258,19 +258,19 @@ class TreeBuilder {
       // Create node (use displayName for the output name)
       const resolved = {
         name: outputName,
-        type: ctgInvoke === true ? 'ctg' : 'function',
+        type: ctg === true ? 'ctg' : 'function',
         ...finalProps
       };
 
       // Resolve children
-      if (children && children.length > 0 && ctgInvoke !== true) {
+      if (children && children.length > 0 && ctg !== true) {
         resolved.children = await Promise.all(
           children.map(child => this._resolveChild(child, newVisited, newPath))
         );
       }
 
       // Append "SMART Call Over HTTPS" leaf if usesLegacyGatewayHttpClient is true (not for ctg nodes, which are always leaves)
-      if (usesLegacyGatewayHttpClient === true && ctgInvoke !== true) {
+      if (usesLegacyGatewayHttpClient === true && ctg !== true) {
         if (!resolved.children) resolved.children = [];
         resolved.children.push({ name: 'SMART Call Over HTTPS', type: 'smart' });
       }
@@ -300,7 +300,7 @@ class TreeBuilder {
 
     // Async reference = queue wrapper
     if (child.ref && child.async) {
-      const { ref, async: _, queueName, ...existingProps } = child;
+      const { ref, async: _, queueName, asyncRef: _a, syncRef: _s, topicRef: _t, ...existingProps } = child;
 
       // Look up the function definition's queueName (default queue for async refs to this function)
       // Use normalized name for case-insensitive lookup
@@ -392,7 +392,7 @@ class TreeBuilder {
 
     // Async reference = queue wrapper
     if (node.ref && node.async) {
-      const { ref, async: _, queueName, ...queueProps } = node;
+      const { ref, async: _, queueName, asyncRef: _a, syncRef: _s, topicRef: _t, ...queueProps } = node;
 
       // Look up the function definition's queueName (default queue for async refs to this function)
       // Use normalized name for case-insensitive lookup
@@ -457,7 +457,7 @@ class TreeBuilder {
     }
 
     // Copy node, extracting usesLegacyGatewayHttpClient so it doesn't appear in output
-    const { usesLegacyGatewayHttpClient, ctgInvoke, ...nodeWithoutFlag } = node;
+    const { usesLegacyGatewayHttpClient, ctg, ...nodeWithoutFlag } = node;
     const result = { ...nodeWithoutFlag };
 
     if (!node.children) {
