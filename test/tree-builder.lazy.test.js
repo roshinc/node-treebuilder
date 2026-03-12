@@ -561,4 +561,195 @@ describe('TreeBuilder lazy loading', () => {
             assert.equal(childNode.metadata_lines[0].text, 'Logs');
         });
     });
+
+    // ── Cycle detection in lazy mode ────────────────────────────────
+
+    describe('cycle detection in lazy mode', () => {
+        it('should produce dupe-stopper for self-referencing function via buildLazy', async () => {
+            builder.defineFunctions({
+                selfRef: { children: [ref('selfRef')] }
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [ref('selfRef')]
+            };
+
+            const tree = await builder.buildLazy(app);
+            const selfRefNode = tree.children[0];
+            assert.equal(selfRefNode.name, 'selfRef');
+            assert.equal(selfRefNode.type, 'function');
+            // selfRef is resolved shallowly; its child ref('selfRef') hits visited → dupe-stopper
+            assert.equal(selfRefNode.children.length, 1);
+            assert.equal(selfRefNode.children[0].type, 'dupe-stopper');
+            assert.ok(selfRefNode.children[0].name.includes('selfRef'));
+            assert.equal(selfRefNode.loadChildren, undefined);
+        });
+
+        it('should produce dupe-stopper for self-referencing function via buildLazyFrom', async () => {
+            builder.defineFunctions({
+                selfRef: { children: [ref('selfRef')] }
+            });
+
+            const result = await builder.buildLazyFrom('selfRef');
+            assert.equal(result.name, 'selfRef');
+            assert.equal(result.type, 'function');
+            assert.equal(result.children.length, 1);
+            assert.equal(result.children[0].type, 'dupe-stopper');
+            assert.ok(result.children[0].name.includes('selfRef'));
+        });
+
+        it('should set loadChildren (not dupe-stopper) for A→B→A cycle at depth 1 via buildLazy', async () => {
+            builder.defineFunctions({
+                funcA: { children: [ref('funcB')] },
+                funcB: { children: [ref('funcA')] }
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [ref('funcA')]
+            };
+
+            const tree = await builder.buildLazy(app);
+            const funcA = tree.children[0];
+            assert.equal(funcA.name, 'funcA');
+            assert.equal(funcA.children.length, 1);
+
+            // funcB is resolved as leaf-or-loadable: it has children → loadChildren: true
+            // No dupe-stopper because funcB is not in visited (only funcA is)
+            const funcB = funcA.children[0];
+            assert.equal(funcB.name, 'funcB');
+            assert.equal(funcB.loadChildren, true);
+            assert.equal(funcB.children, undefined);
+        });
+
+        it('should not produce dupe-stopper when expanding A→B→A cycle via buildLazyFrom (fresh visited)', async () => {
+            builder.defineFunctions({
+                funcA: { children: [ref('funcB')] },
+                funcB: { children: [ref('funcA')] }
+            });
+
+            // Expanding funcB in isolation — visited starts fresh with only funcB
+            const result = await builder.buildLazyFrom('funcB');
+            assert.equal(result.name, 'funcB');
+            assert.equal(result.children.length, 1);
+
+            // funcA resolved as leaf-or-loadable: has children → loadChildren: true
+            // No dupe-stopper because visited only contains funcB, not funcA
+            const funcA = result.children[0];
+            assert.equal(funcA.name, 'funcA');
+            assert.equal(funcA.loadChildren, true);
+            assert.equal(funcA.children, undefined);
+        });
+
+        it('should handle A→B→C→A cycle across multiple buildLazyFrom calls without dupe-stoppers', async () => {
+            builder.defineFunctions({
+                A: { children: [ref('B')] },
+                B: { children: [ref('C')] },
+                C: { children: [ref('A')] }
+            });
+
+            // Each call starts with fresh visited — indirect cycles never trigger dupe-stopper
+            const resultA = await builder.buildLazyFrom('A');
+            assert.equal(resultA.children[0].name, 'B');
+            assert.equal(resultA.children[0].loadChildren, true);
+            assert.equal(resultA.children[0].children, undefined);
+
+            const resultB = await builder.buildLazyFrom('B');
+            assert.equal(resultB.children[0].name, 'C');
+            assert.equal(resultB.children[0].loadChildren, true);
+            assert.equal(resultB.children[0].children, undefined);
+
+            const resultC = await builder.buildLazyFrom('C');
+            assert.equal(resultC.children[0].name, 'A');
+            assert.equal(resultC.children[0].loadChildren, true);
+            assert.equal(resultC.children[0].children, undefined);
+        });
+
+        it('should not produce dupe-stopper for diamond pattern (same function referenced twice)', async () => {
+            builder.defineFunctions({
+                leaf: {},
+                shared: { children: [ref('leaf')] },
+                parent: { children: [ref('shared'), ref('shared')] }
+            });
+
+            const result = await builder.buildLazyFrom('parent');
+            assert.equal(result.children.length, 2);
+
+            // Both refs to shared are resolved independently — no cycle
+            assert.equal(result.children[0].name, 'shared');
+            assert.equal(result.children[0].loadChildren, true);
+            assert.equal(result.children[0].children, undefined);
+
+            assert.equal(result.children[1].name, 'shared');
+            assert.equal(result.children[1].loadChildren, true);
+            assert.equal(result.children[1].children, undefined);
+        });
+
+        it('should handle cycle through async ref via buildLazy', async () => {
+            builder.defineFunctions({
+                funcA: { children: [asyncRef('funcB', 'Q')] },
+                funcB: { children: [ref('funcA')], queueName: 'Q' }
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [ref('funcA')]
+            };
+
+            const tree = await builder.buildLazy(app);
+            const funcA = tree.children[0];
+            assert.equal(funcA.name, 'funcA');
+            assert.equal(funcA.children.length, 1);
+
+            // async ref produces timer wrapper
+            const timerNode = funcA.children[0];
+            assert.equal(timerNode.type, 'timer');
+
+            // inner funcB resolved as leaf-or-loadable: has children → loadChildren
+            const funcB = timerNode.children[0];
+            assert.equal(funcB.name, 'funcB');
+            assert.equal(funcB.loadChildren, true);
+            assert.equal(funcB.children, undefined);
+        });
+
+        it('should handle cycle through async ref via buildLazyFrom', async () => {
+            builder.defineFunctions({
+                funcA: { children: [asyncRef('funcB', 'Q')] },
+                funcB: { children: [ref('funcA')], queueName: 'Q' }
+            });
+
+            // Expand funcB — fresh visited, funcA gets loadChildren
+            const result = await builder.buildLazyFrom('funcB');
+            assert.equal(result.name, 'funcB');
+            assert.equal(result.children.length, 1);
+
+            const funcA = result.children[0];
+            assert.equal(funcA.name, 'funcA');
+            assert.equal(funcA.loadChildren, true);
+            assert.equal(funcA.children, undefined);
+        });
+
+        it('should produce dupe-stopper for self-ref even when function has multiple children', async () => {
+            builder.defineFunctions({
+                leaf: {},
+                selfAndOthers: { children: [ref('leaf'), ref('selfAndOthers')] }
+            });
+
+            const result = await builder.buildLazyFrom('selfAndOthers');
+            assert.equal(result.name, 'selfAndOthers');
+            assert.equal(result.children.length, 2);
+
+            // First child: leaf resolved normally
+            assert.equal(result.children[0].name, 'leaf');
+            assert.equal(result.children[0].type, 'function');
+
+            // Second child: self-ref hits visited → dupe-stopper
+            assert.equal(result.children[1].type, 'dupe-stopper');
+            assert.ok(result.children[1].name.includes('selfAndOthers'));
+        });
+    });
 });
