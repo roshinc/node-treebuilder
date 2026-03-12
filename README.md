@@ -232,6 +232,7 @@ Any node can include `metadata_lines` - an array of metadata objects that will b
 │       └── nims-wt-file-process-app.json
 ├── test/
 │   ├── tree-builder.test.js
+│   ├── tree-builder.lazy.test.js
 │   └── json-loader.test.js
 ├── example.js           # JavaScript config example
 └── example-json.js      # JSON config example
@@ -255,8 +256,12 @@ builder.setTopicPublishResolver((topicName, queueName) => ({ queueName }));
 // Set log decider for "Logs" metadata_lines
 builder.setLogDecider(new LogDecider(['function', 'timer']));
 
-// Build tree
+// Build tree (full resolution)
 const tree = await builder.build(appStructure);
+
+// Build tree (lazy — one level at a time)
+const lazyTree = await builder.buildLazy(appStructure);
+const expanded = await builder.buildLazyFrom('functionName');
 ```
 
 #### Configuration Options
@@ -385,6 +390,44 @@ builder.setTopicPublishResolver((topicName) => {
 });
 ```
 
+#### Lazy Loading
+
+The lazy API resolves only one level of function children per call. Functions with unresolved children receive a `loadChildren: true` flag instead of a `children` array — the two properties are mutually exclusive.
+
+Use `buildLazy()` for the initial tree and `buildLazyFrom()` to expand individual nodes on demand:
+
+```javascript
+// 1. Initial lazy build — resolves app structure + immediate children
+const tree = await builder.buildLazy(appStructure);
+// Nodes with deeper children have { loadChildren: true } instead of children
+
+// 2. Expand a specific function on demand
+const expanded = await builder.buildLazyFrom('parentFunc');
+// Returns parentFunc as root with its direct children resolved shallowly
+```
+
+**`buildLazy(appStructure)`** — Takes the same app template as `build()`. Resolves structural containers (app, ui-services, ui-service-method) and the first level of function references. Functions whose children are not yet resolved get `loadChildren: true`.
+
+**`buildLazyFrom(functionName)`** — Takes a function name as starting point. Returns that function as the root node with its direct children resolved shallowly (same depth-1 treatment). Each call starts with a fresh visited set, so there is no cross-request state.
+
+**Output shape:**
+```javascript
+// Function with unresolved children
+{ name: 'myFunc', type: 'function', loadChildren: true }
+
+// Leaf function (no children)
+{ name: 'myFunc', type: 'function' }
+
+// loadChildren and children never appear together on the same node
+```
+
+**Behavior notes:**
+- Structural containers (app, ui-services, ui-service-method) are traversed transparently — only function ref boundaries count as depth
+- Async refs render the timer wrapper + inner function together; the inner function gets `loadChildren: true` if it has deeper children
+- Self-referencing functions produce a `dupe-stopper` node (same cycle detection as `build()`)
+- The lazy API does not populate the internal `resolvedFunctions` cache — each call is self-contained
+- All lookups are case-insensitive, consistent with `build()`
+
 ### JSON Loader
 
 ```javascript
@@ -422,7 +465,7 @@ node example-json.js
 npm test
 ```
 
-Runs 93 unit tests covering TreeBuilder and JSON loader functionality.
+Runs 192 unit tests covering TreeBuilder, lazy loading, and JSON loader functionality.
 
 ## License
 
