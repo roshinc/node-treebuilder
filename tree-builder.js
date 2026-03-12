@@ -190,7 +190,7 @@ class TreeBuilder {
   _createCycleStopper(displayName, path) {
     return {
       name: `loop detected stopping (${displayName})`,
-      type: 'dupe-stopper',
+      type: 'loop',
       _cycleAt: displayName,
       _path: [...path, displayName]
     };

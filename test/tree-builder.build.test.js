@@ -74,7 +74,7 @@ describe('TreeBuilder', () => {
             assert.equal(tree.children[0]._unresolvedRef, 'undefinedFunc');
         });
 
-        it('should detect cycles and create dupe-stopper nodes', async () => {
+        it('should detect cycles and create loop nodes', async () => {
             builder.defineFunctions({
                 funcA: { children: [ref('funcB')] },
                 funcB: { children: [ref('funcA')] }
@@ -91,7 +91,7 @@ describe('TreeBuilder', () => {
             // funcA -> funcB -> (cycle at funcA)
             const funcB = tree.children[0].children[0];
             assert.equal(funcB.name, 'funcB');
-            assert.equal(funcB.children[0].type, 'dupe-stopper');
+            assert.equal(funcB.children[0].type, 'loop');
             assert.ok(funcB.children[0].name.includes('funcA'));
         });
 
@@ -108,7 +108,7 @@ describe('TreeBuilder', () => {
 
             const tree = await builder.build(app);
             assert.equal(tree.children[0].name, 'selfRef');
-            assert.equal(tree.children[0].children[0].type, 'dupe-stopper');
+            assert.equal(tree.children[0].children[0].type, 'loop');
         });
 
         it('should not reuse cycle stoppers from a different root path', async () => {
@@ -129,7 +129,7 @@ describe('TreeBuilder', () => {
             const cNode = tree.children[0].children[0];
             assert.equal(cNode.name, 'C');
             assert.equal(cNode.children[0].name, 'B');
-            assert.equal(cNode.children[0].children[0].type, 'dupe-stopper');
+            assert.equal(cNode.children[0].children[0].type, 'loop');
             assert.ok(cNode.children[0].children[0].name.includes('C'));
         });
 

@@ -424,7 +424,7 @@ const expanded = await builder.buildLazyFrom('parentFunc');
 **Behavior notes:**
 - Structural containers (app, ui-services, ui-service-method) are traversed transparently — only function ref boundaries count as depth
 - Async refs render the timer wrapper + inner function together; the inner function gets `loadChildren: true` if it has deeper children
-- Self-referencing functions produce a `dupe-stopper` node (same cycle detection as `build()`)
+- Self-referencing functions produce a `loop` node (same cycle detection as `build()`)
 - The lazy API does not populate the internal `resolvedFunctions` cache — each call is self-contained
 - All lookups are case-insensitive, consistent with `build()`
 

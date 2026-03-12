@@ -135,17 +135,17 @@ describe('TreeBuilder', () => {
             assert.equal(tree.metadata_lines, undefined);
         });
 
-        it('should not add Logs to dupe-stopper nodes', async () => {
-            builder.setLogDecider(new LogDecider(['dupe-stopper', 'function']));
+        it('should not add Logs to loop nodes', async () => {
+            builder.setLogDecider(new LogDecider(['loop', 'function']));
             builder.defineFunctions({
                 funcA: { children: [{ ref: 'funcB' }] },
                 funcB: { children: [{ ref: 'funcA' }] }
             });
             const app = { name: 'test-app', type: 'app', children: [{ ref: 'funcA' }] };
             const tree = await builder.build(app);
-            // funcA -> funcB -> dupe-stopper(funcA)
+            // funcA -> funcB -> loop(funcA)
             const dupeStopper = tree.children[0].children[0].children[0];
-            assert.equal(dupeStopper.type, 'dupe-stopper');
+            assert.equal(dupeStopper.type, 'loop');
             assert.equal(dupeStopper.metadata_lines, undefined);
         });
 

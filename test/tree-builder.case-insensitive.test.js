@@ -124,7 +124,7 @@ describe('TreeBuilder', () => {
             };
 
             const tree = await builder.build(app);
-            assert.equal(tree.children[0].children[0].type, 'dupe-stopper');
+            assert.equal(tree.children[0].children[0].type, 'loop');
         });
 
         it('should handle indirect self-reference through concurrent children without infinite loop', async () => {
@@ -165,9 +165,9 @@ describe('TreeBuilder', () => {
             assert.equal(dFromC.name, 'D');
 
             // D's child should be a cycle stopper for A (since A is in the visited path)
-            assert.equal(dFromB.children[0].type, 'dupe-stopper');
+            assert.equal(dFromB.children[0].type, 'loop');
             assert.ok(dFromB.children[0].name.includes('A'));
-            assert.equal(dFromC.children[0].type, 'dupe-stopper');
+            assert.equal(dFromC.children[0].type, 'loop');
             assert.ok(dFromC.children[0].name.includes('A'));
         });
 
@@ -234,7 +234,7 @@ describe('TreeBuilder', () => {
             assert.equal(funcE.name, 'E');
 
             // E's child should be a cycle stopper for A
-            assert.equal(funcE.children[0].type, 'dupe-stopper');
+            assert.equal(funcE.children[0].type, 'loop');
             assert.ok(funcE.children[0].name.includes('A'));
             assert.deepEqual(funcE.children[0]._path, ['A', 'B', 'C', 'D', 'E', 'A']);
         });
@@ -263,7 +263,7 @@ describe('TreeBuilder', () => {
             const sharedFromA = funcA.children[0];
             assert.equal(sharedFromA.name, 'shared');
             // shared's first child is ref to A - should be cycle stopper (A is in visited)
-            assert.equal(sharedFromA.children[0].type, 'dupe-stopper');
+            assert.equal(sharedFromA.children[0].type, 'loop');
             assert.ok(sharedFromA.children[0].name.includes('A'));
 
             // Path through B: B -> shared -> [A, cycle(B)]
@@ -272,7 +272,7 @@ describe('TreeBuilder', () => {
             const sharedFromB = funcB.children[0];
             assert.equal(sharedFromB.name, 'shared');
             // shared's second child is ref to B - should be cycle stopper (B is in visited)
-            assert.equal(sharedFromB.children[1].type, 'dupe-stopper');
+            assert.equal(sharedFromB.children[1].type, 'loop');
             assert.ok(sharedFromB.children[1].name.includes('B'));
         });
     });
