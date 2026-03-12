@@ -573,9 +573,8 @@ class TreeBuilder {
    * Post-process a built tree to add collapsed: true hints for showMinimal mode.
    * Creates shallow copies only for nodes it modifies.
    * @param {object} node - The node to process
-   * @param {boolean} isTimerChild - Whether this node is a direct child of a timer (exempt from collapse)
    */
-  _applyShowMinimal(node, isTimerChild = false) {
+  _applyShowMinimal(node) {
     if (!node) return node;
 
     let result = node;
@@ -583,9 +582,8 @@ class TreeBuilder {
 
     // Recurse into children first (bottom-up)
     if (node.children && node.children.length > 0) {
-      const isTimer = node.type === 'timer';
       const newChildren = node.children.map(child =>
-        this._applyShowMinimal(child, isTimer)
+        this._applyShowMinimal(child)
       );
       if (newChildren.some((c, i) => c !== node.children[i])) {
         result = { ...result, children: newChildren };
@@ -594,19 +592,9 @@ class TreeBuilder {
     }
 
     const hasChildren = result.children && result.children.length > 0;
-    let shouldCollapse = false;
-
-    if (node.type === 'function' && hasChildren && !isTimerChild) {
-      shouldCollapse = true;
-    } else if (node.type === 'ui-service-method' && hasChildren) {
-      shouldCollapse = true;
-    } else if (node.type === 'timer' && hasChildren) {
-      // Timer gets collapsed if its inner function child has children
-      const innerChild = result.children[0];
-      if (innerChild && innerChild.children && innerChild.children.length > 0) {
-        shouldCollapse = true;
-      }
-    }
+    const shouldCollapse =
+      (node.type === 'function' && hasChildren) ||
+      (node.type === 'ui-service-method' && hasChildren);
 
     if (shouldCollapse) {
       if (!modified) result = { ...result };

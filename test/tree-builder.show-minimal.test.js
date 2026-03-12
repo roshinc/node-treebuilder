@@ -151,36 +151,7 @@ describe('TreeBuilder showMinimal', () => {
     });
 
     describe('async refs (timer nodes)', () => {
-        it('should set collapsed on timer when inner function has children', async () => {
-            builder.defineFunctions({
-                asyncFunc: { children: [ref('child')] },
-                child: {}
-            });
-
-            const tree = await builder.build({
-                name: 'test-app', type: 'app',
-                children: [asyncRef('asyncFunc', 'MY.QUEUE')]
-            });
-
-            const timer = tree.children[0];
-            assert.equal(timer.type, 'timer');
-            assert.equal(timer.collapsed, true);
-        });
-
-        it('should not set collapsed on timer when inner function is a leaf', async () => {
-            builder.defineFunctions({ leafAsync: {} });
-
-            const tree = await builder.build({
-                name: 'test-app', type: 'app',
-                children: [asyncRef('leafAsync', 'MY.QUEUE')]
-            });
-
-            const timer = tree.children[0];
-            assert.equal(timer.type, 'timer');
-            assert.equal(timer.collapsed, undefined);
-        });
-
-        it('should NOT set collapsed on inner function of timer (exemption)', async () => {
+        it('should set collapsed on inner function of timer when it has children', async () => {
             builder.defineFunctions({
                 asyncFunc: { children: [ref('child')] },
                 child: {}
@@ -193,12 +164,27 @@ describe('TreeBuilder showMinimal', () => {
 
             const timer = tree.children[0];
             const innerFunc = timer.children[0];
+            assert.equal(timer.type, 'timer');
+            assert.equal(timer.collapsed, undefined);
             assert.equal(innerFunc.type, 'function');
-            assert.equal(innerFunc.children.length, 1);
+            assert.equal(innerFunc.collapsed, true);
+        });
+
+        it('should not set collapsed when inner function is a leaf', async () => {
+            builder.defineFunctions({ leafAsync: {} });
+
+            const tree = await builder.build({
+                name: 'test-app', type: 'app',
+                children: [asyncRef('leafAsync', 'MY.QUEUE')]
+            });
+
+            const timer = tree.children[0];
+            const innerFunc = timer.children[0];
+            assert.equal(timer.collapsed, undefined);
             assert.equal(innerFunc.collapsed, undefined);
         });
 
-        it('should still show inner function as child of collapsed timer', async () => {
+        it('should not set collapsed on the timer wrapper itself', async () => {
             builder.defineFunctions({
                 asyncFunc: { children: [ref('child')] },
                 child: {}
@@ -210,14 +196,15 @@ describe('TreeBuilder showMinimal', () => {
             });
 
             const timer = tree.children[0];
-            assert.equal(timer.collapsed, true);
+            assert.equal(timer.type, 'timer');
+            assert.equal(timer.collapsed, undefined);
             assert.equal(timer.children.length, 1);
             assert.equal(timer.children[0].name, 'asyncFunc');
         });
     });
 
     describe('same function as sync and async ref', () => {
-        it('should collapse sync ref function but not async inner function', async () => {
+        it('should collapse both sync and async inner function the same way', async () => {
             builder.defineFunctions({
                 sharedFunc: { children: [ref('child')] },
                 child: {}
@@ -239,18 +226,18 @@ describe('TreeBuilder showMinimal', () => {
             assert.equal(syncRef.type, 'function');
             assert.equal(syncRef.collapsed, true);
 
-            // Timer gets collapsed
+            // Timer does NOT get collapsed
             assert.equal(timer.type, 'timer');
-            assert.equal(timer.collapsed, true);
+            assert.equal(timer.collapsed, undefined);
 
-            // Inner function does NOT get collapsed
+            // Inner function gets collapsed (has children)
             assert.equal(asyncInner.type, 'function');
-            assert.equal(asyncInner.collapsed, undefined);
+            assert.equal(asyncInner.collapsed, true);
         });
     });
 
     describe('timer inside function', () => {
-        it('should collapse both the parent function and the nested timer', async () => {
+        it('should collapse the parent function and inner function, not the timer', async () => {
             builder.defineFunctions({
                 outer: { children: [asyncRef('inner', 'Q.NAME')] },
                 inner: { children: [ref('leaf')] },
@@ -267,8 +254,8 @@ describe('TreeBuilder showMinimal', () => {
             const inner = timer.children[0];
 
             assert.equal(outer.collapsed, true);
-            assert.equal(timer.collapsed, true);
-            assert.equal(inner.collapsed, undefined); // inner is timer child, exempt
+            assert.equal(timer.collapsed, undefined);
+            assert.equal(inner.collapsed, true);
         });
     });
 
