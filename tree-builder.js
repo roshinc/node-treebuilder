@@ -20,6 +20,7 @@ class TreeBuilder {
       unresolvedSeverity = 'warning',
       filterEmptyUiServiceMethods = false,
       filterEmptyUiServices = false,
+      showMinimal = false,
       logger,
       logLevel = DEFAULT_LOG_LEVEL
     } = config;
@@ -35,7 +36,8 @@ class TreeBuilder {
     this.config = {
       unresolvedSeverity, // 'error' or 'warning'
       filterEmptyUiServiceMethods, // omit ui-service-methods with no children
-      filterEmptyUiServices // omit ui-services with no children (after filtering methods)
+      filterEmptyUiServices, // omit ui-services with no children (after filtering methods)
+      showMinimal // add collapsed: true hint to function, ui-service-method, and timer nodes
     };
   }
 
@@ -161,10 +163,12 @@ class TreeBuilder {
     await this._preResolveAllFunctions();
     // Second pass: build tree using cached functions
     const tree = await this._buildNode(rootStructure);
+    // Post-process: add collapsed hints for showMinimal mode
+    const finalTree = this.config.showMinimal ? this._applyShowMinimal(tree) : tree;
     this._log('debug', 'Completed tree build', {
       resolvedFunctionContexts: this.resolvedFunctions.size
     });
-    return tree;
+    return finalTree;
   }
 
   /**
@@ -563,6 +567,53 @@ class TreeBuilder {
       ...node,
       metadata_lines: [logMetadataLine, ...(node.metadata_lines || [])]
     };
+  }
+
+  /**
+   * Post-process a built tree to add collapsed: true hints for showMinimal mode.
+   * Creates shallow copies only for nodes it modifies.
+   * @param {object} node - The node to process
+   * @param {boolean} isTimerChild - Whether this node is a direct child of a timer (exempt from collapse)
+   */
+  _applyShowMinimal(node, isTimerChild = false) {
+    if (!node) return node;
+
+    let result = node;
+    let modified = false;
+
+    // Recurse into children first (bottom-up)
+    if (node.children && node.children.length > 0) {
+      const isTimer = node.type === 'timer';
+      const newChildren = node.children.map(child =>
+        this._applyShowMinimal(child, isTimer)
+      );
+      if (newChildren.some((c, i) => c !== node.children[i])) {
+        result = { ...result, children: newChildren };
+        modified = true;
+      }
+    }
+
+    const hasChildren = result.children && result.children.length > 0;
+    let shouldCollapse = false;
+
+    if (node.type === 'function' && hasChildren && !isTimerChild) {
+      shouldCollapse = true;
+    } else if (node.type === 'ui-service-method' && hasChildren) {
+      shouldCollapse = true;
+    } else if (node.type === 'timer' && hasChildren) {
+      // Timer gets collapsed if its inner function child has children
+      const innerChild = result.children[0];
+      if (innerChild && innerChild.children && innerChild.children.length > 0) {
+        shouldCollapse = true;
+      }
+    }
+
+    if (shouldCollapse) {
+      if (!modified) result = { ...result };
+      result.collapsed = true;
+    }
+
+    return result;
   }
 
   // ── Lazy-loading API ────────────────────────────────────────────────
