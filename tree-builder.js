@@ -565,6 +565,375 @@ class TreeBuilder {
     };
   }
 
+  // ── Lazy-loading API ────────────────────────────────────────────────
+
+  /**
+   * Build a tree lazily from an app template.
+   * Resolves the app structure and immediate function children,
+   * but does NOT resolve grandchildren.  Functions whose definitions
+   * include children get `loadChildren: true` instead.
+   */
+  async buildLazy(rootStructure) {
+    this._log('debug', 'Starting lazy tree build', {
+      rootName: rootStructure?.name
+    });
+    const tree = await this._buildNodeLazy(rootStructure, new Set(), []);
+    this._log('debug', 'Completed lazy tree build');
+    return tree;
+  }
+
+  /**
+   * Build a tree lazily starting from a single function name.
+   * Returns the function as root with its direct children resolved
+   * shallowly (same depth-1 treatment as buildLazy).
+   */
+  async buildLazyFrom(functionName) {
+    this._log('debug', 'Starting lazy build from function', { functionName });
+    const result = await this._resolveFunctionShallow(functionName, new Set(), []);
+    this._log('debug', 'Completed lazy build from function');
+    return result;
+  }
+
+  /**
+   * Mirrors _buildNode but resolves function refs shallowly (one level).
+   * Structural containers (app, ui-services, ui-service-method) are
+   * traversed transparently — only function ref boundaries count as depth.
+   */
+  async _buildNodeLazy(node, visited = new Set(), path = []) {
+    // Sync reference → resolve function + its immediate children
+    if (node.ref && !node.async && !node.topicPublish) {
+      return await this._resolveFunctionShallow(node.ref, visited, path);
+    }
+
+    // Async reference → timer wrapper + inner function (shown together)
+    if (node.ref && node.async) {
+      const { ref: refName, async: _, queueName, asyncRef: _a, syncRef: _s, topicRef: _t, ...queueProps } = node;
+
+      const normalizedRef = this._normalizeName(refName);
+      const funcDef = this.functionDefs.get(normalizedRef);
+      const funcQueueName = funcDef?.queueName;
+      const displayName = this._getDisplayName(refName);
+
+      const effectiveQueueName = queueName || funcQueueName;
+      const { resolvedProps, errorMetadataLines } = await this._resolveExternalProps(
+        this.asyncResolver,
+        'asyncResolver',
+        [refName, effectiveQueueName]
+      );
+
+      const finalQueueName = resolvedProps.queueName || queueName || funcQueueName || `${displayName}_queue`;
+      const metadataLines = this._mergeMetadataLines(
+        errorMetadataLines,
+        queueProps.metadata_lines,
+        resolvedProps.metadata_lines
+      );
+
+      return this._applyLogMetadataLine({
+        name: finalQueueName,
+        type: 'timer',
+        ...queueProps,
+        ...resolvedProps,
+        queueName: undefined,
+        ...(metadataLines ? { metadata_lines: metadataLines } : {}),
+        children: [await this._resolveFunctionShallow(refName, visited, path)]
+      }, {}, { resolvedProps, resolverName: 'asyncResolver' });
+    }
+
+    // Topic publish → leaf node (identical to _buildNode)
+    if (node.topicPublish) {
+      const { ref: refName, topicName, topicPublish: _, queueName, ...queueProps } = node;
+      const effectiveTopicName = topicName || 'unknown topic';
+      const { resolvedProps, errorMetadataLines } = await this._resolveExternalProps(
+        this.topicPublishResolver,
+        'topicPublishResolver',
+        [effectiveTopicName, queueName]
+      );
+
+      const finalQueueName = resolvedProps.queueName
+        || queueName
+        || (topicName ? `${topicName}_queue` : 'unknown topic');
+      const metadataLines = this._mergeMetadataLines(
+        errorMetadataLines,
+        queueProps.metadata_lines,
+        resolvedProps.metadata_lines
+      );
+
+      return this._applyLogMetadataLine({
+        name: finalQueueName,
+        type: 'topic',
+        ...queueProps,
+        ...resolvedProps,
+        queueName: undefined,
+        ...(metadataLines ? { metadata_lines: metadataLines } : {}),
+      }, {}, { resolvedProps, resolverName: 'topicPublishResolver' });
+    }
+
+    // Structural node (app, ui-services, ui-service-method, etc.)
+    const { usesLegacyGatewayHttpClient, ctg, ...nodeWithoutFlag } = node;
+    const result = { ...nodeWithoutFlag };
+
+    if (!node.children) {
+      if (usesLegacyGatewayHttpClient === true) {
+        result.children = [{ name: 'SMART Call Over HTTPS', type: 'smart' }];
+      }
+      return this._applyLogMetadataLine(result, {}, {});
+    }
+
+    // Track path for function types
+    let newVisited = visited;
+    let newPath = path;
+    if (this._shouldTrack(node.type) && node.name) {
+      const normalizedNodeName = this._normalizeName(node.name);
+      if (visited.has(normalizedNodeName)) {
+        return this._createCycleStopper(node.name, path);
+      }
+      newVisited = new Set(visited);
+      newVisited.add(normalizedNodeName);
+      newPath = [...path, node.name];
+    }
+
+    const resolvedChildren = await Promise.all(node.children.map(child =>
+      this._buildNodeLazy(child, newVisited, newPath)
+    ));
+    result.children = resolvedChildren.filter(child => child !== null);
+
+    if (usesLegacyGatewayHttpClient === true) {
+      result.children.push({ name: 'SMART Call Over HTTPS', type: 'smart' });
+    }
+
+    // Filtering (same as _buildNode)
+    if (this.config.filterEmptyUiServiceMethods && node.type === 'ui-services') {
+      result.children = result.children.filter(child => {
+        if (child.type === 'ui-service-method') {
+          return child.children && child.children.length > 0;
+        }
+        return true;
+      });
+    }
+    if (this.config.filterEmptyUiServices && node.type === 'ui-services') {
+      if (!result.children || result.children.length === 0) {
+        return null;
+      }
+    }
+
+    return this._applyLogMetadataLine(result, {}, {});
+  }
+
+  /**
+   * Resolve a function AND its immediate children (one level deep).
+   * Each child is resolved via _resolveChildAsLeafOrLoadable.
+   */
+  async _resolveFunctionShallow(name, visited, path) {
+    const normalizedName = this._normalizeName(name);
+
+    // Cycle detection
+    if (visited.has(normalizedName)) {
+      const displayName = this._getDisplayName(name);
+      return this._createCycleStopper(displayName, path);
+    }
+
+    const def = this.functionDefs.get(normalizedName);
+    if (!def) {
+      this._log('warn', 'Unresolved function reference', { ref: name });
+      return {
+        name: `dependency to ${name} could not be resolved so the tree may be incomplete`,
+        type: this.config.unresolvedSeverity,
+        _unresolvedRef: name
+      };
+    }
+
+    const { children, app, queueName, displayName, usesLegacyGatewayHttpClient, ctg, ...props } = def;
+    const outputName = displayName || name;
+
+    const newVisited = new Set(visited);
+    newVisited.add(normalizedName);
+    const newPath = [...path, outputName];
+
+    // Transform 'app' field into metadata_line
+    let finalProps = { ...props };
+    if (app) {
+      const appMetadataLine = { text: app, clickable: false };
+      finalProps.metadata_lines = [
+        appMetadataLine,
+        ...(props.metadata_lines || [])
+      ];
+    }
+
+    const resolved = {
+      name: outputName,
+      type: ctg === true ? 'ctg' : 'function',
+      ...finalProps
+    };
+
+    // ctg nodes are always leaves
+    if (ctg === true) {
+      return this._applyLogMetadataLine(resolved, app ? { app } : {}, {});
+    }
+
+    // Resolve immediate children shallowly
+    if (children && children.length > 0) {
+      resolved.children = await Promise.all(
+        children.map(child => this._resolveChildAsLeafOrLoadable(child, newVisited, newPath))
+      );
+    }
+
+    // Append SMART child if needed
+    if (usesLegacyGatewayHttpClient === true) {
+      if (!resolved.children) resolved.children = [];
+      resolved.children.push({ name: 'SMART Call Over HTTPS', type: 'smart' });
+    }
+
+    return this._applyLogMetadataLine(resolved, app ? { app } : {}, {});
+  }
+
+  /**
+   * Resolve a child reference to its node representation without
+   * recursing into its children.  Sets loadChildren: true if the
+   * underlying function has unresolved children.
+   */
+  async _resolveChildAsLeafOrLoadable(child, visited, path) {
+    // Sync reference
+    if (child.ref && !child.async && !child.topicPublish) {
+      return this._resolveFunctionAsLeafOrLoadable(child.ref, visited, path);
+    }
+
+    // Async reference → timer wrapper + inner function as leaf-or-loadable
+    if (child.ref && child.async) {
+      const { ref: refName, async: _, queueName, asyncRef: _a, syncRef: _s, topicRef: _t, ...existingProps } = child;
+
+      const normalizedRef = this._normalizeName(refName);
+      const funcDef = this.functionDefs.get(normalizedRef);
+      const funcQueueName = funcDef?.queueName;
+      const displayName = this._getDisplayName(refName);
+
+      const effectiveQueueName = queueName || funcQueueName;
+      const { resolvedProps, errorMetadataLines } = await this._resolveExternalProps(
+        this.asyncResolver,
+        'asyncResolver',
+        [refName, effectiveQueueName]
+      );
+
+      const finalQueueName = resolvedProps.queueName || queueName || funcQueueName || `${displayName}_queue`;
+      const metadataLines = this._mergeMetadataLines(
+        errorMetadataLines,
+        existingProps.metadata_lines,
+        resolvedProps.metadata_lines
+      );
+
+      return this._applyLogMetadataLine({
+        name: finalQueueName,
+        type: 'timer',
+        ...existingProps,
+        ...resolvedProps,
+        queueName: undefined,
+        ...(metadataLines ? { metadata_lines: metadataLines } : {}),
+        children: [await this._resolveFunctionAsLeafOrLoadable(refName, visited, path)]
+      }, {}, { resolvedProps, resolverName: 'asyncResolver' });
+    }
+
+    // Topic publish → leaf node
+    if (child.topicPublish) {
+      const { ref: refName, topicName, topicPublish: _, queueName, ...existingProps } = child;
+      const effectiveTopicName = topicName || 'unknown topic';
+      const { resolvedProps, errorMetadataLines } = await this._resolveExternalProps(
+        this.topicPublishResolver,
+        'topicPublishResolver',
+        [effectiveTopicName, queueName]
+      );
+
+      const finalQueueName = resolvedProps.queueName
+        || queueName
+        || (topicName ? `${topicName}_queue` : 'unknown topic');
+      const metadataLines = this._mergeMetadataLines(
+        errorMetadataLines,
+        existingProps.metadata_lines,
+        resolvedProps.metadata_lines
+      );
+
+      return this._applyLogMetadataLine({
+        name: finalQueueName,
+        type: 'topic',
+        ...existingProps,
+        ...resolvedProps,
+        queueName: undefined,
+        ...(metadataLines ? { metadata_lines: metadataLines } : {}),
+      }, {}, { resolvedProps, resolverName: 'topicPublishResolver' });
+    }
+
+    // Inline queue/timer/topic → resolve wrapper, children as leaf-or-loadable
+    if (child.type === 'queue' || child.type === 'timer' || child.type === 'topic') {
+      const childNodes = child.children || [];
+      return this._applyLogMetadataLine({
+        ...child,
+        children: await Promise.all(childNodes.map(c => this._resolveChildAsLeafOrLoadable(c, visited, path)))
+      }, {}, {});
+    }
+
+    // Other inline node
+    return child;
+  }
+
+  /**
+   * Build a function node WITHOUT resolving its children.
+   * Sets loadChildren: true if the function has children defined.
+   * loadChildren and children are mutually exclusive.
+   */
+  async _resolveFunctionAsLeafOrLoadable(name, visited, path) {
+    const normalizedName = this._normalizeName(name);
+
+    // Cycle detection
+    if (visited.has(normalizedName)) {
+      const displayName = this._getDisplayName(name);
+      return this._createCycleStopper(displayName, path);
+    }
+
+    const def = this.functionDefs.get(normalizedName);
+    if (!def) {
+      this._log('warn', 'Unresolved function reference', { ref: name });
+      return {
+        name: `dependency to ${name} could not be resolved so the tree may be incomplete`,
+        type: this.config.unresolvedSeverity,
+        _unresolvedRef: name
+      };
+    }
+
+    const { children, app, queueName, displayName, usesLegacyGatewayHttpClient, ctg, ...props } = def;
+    const outputName = displayName || name;
+
+    // Transform 'app' field into metadata_line
+    let finalProps = { ...props };
+    if (app) {
+      const appMetadataLine = { text: app, clickable: false };
+      finalProps.metadata_lines = [
+        appMetadataLine,
+        ...(props.metadata_lines || [])
+      ];
+    }
+
+    const resolved = {
+      name: outputName,
+      type: ctg === true ? 'ctg' : 'function',
+      ...finalProps
+    };
+
+    // ctg nodes are always leaves
+    if (ctg === true) {
+      return this._applyLogMetadataLine(resolved, app ? { app } : {}, {});
+    }
+
+    const hasChildren = children && children.length > 0;
+
+    if (hasChildren) {
+      // loadChildren and children are mutually exclusive
+      resolved.loadChildren = true;
+    } else if (usesLegacyGatewayHttpClient === true) {
+      // No real children, but SMART child is a static leaf — include directly
+      resolved.children = [{ name: 'SMART Call Over HTTPS', type: 'smart' }];
+    }
+
+    return this._applyLogMetadataLine(resolved, app ? { app } : {}, {});
+  }
+
   static ref(name) {
     return { ref: name };
   }
