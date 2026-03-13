@@ -164,7 +164,7 @@ class TreeBuilder {
     // Second pass: build tree using cached functions
     const tree = await this._buildNode(rootStructure);
     // Post-process: add collapsed hints for showMinimal mode
-    const finalTree = this.config.showMinimal ? this._applyShowMinimal(tree, rootStructure.name) : tree;
+    const finalTree = this.config.showMinimal ? this._applyShowMinimal(tree, rootStructure.name?.toLowerCase()) : tree;
     this._log('debug', 'Completed tree build', {
       resolvedFunctionContexts: this.resolvedFunctions.size
     });
@@ -585,7 +585,7 @@ class TreeBuilder {
 
     // Check if this function node crosses the app boundary
     const nodeCrossesBoundary = node.type === 'function' &&
-      (!node.app || node.app !== rootAppName);
+      (!node.app || node.app.toLowerCase() !== rootAppName);
     const isCrossed = crossedBoundary || nodeCrossesBoundary;
 
     let result = node;

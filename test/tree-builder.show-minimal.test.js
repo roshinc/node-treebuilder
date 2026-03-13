@@ -80,6 +80,26 @@ describe('TreeBuilder showMinimal', () => {
         });
     });
 
+    describe('case-insensitive app matching', () => {
+        it('should treat app names as case-insensitive when matching', async () => {
+            builder.defineFunctions({
+                parent: { app: 'Test-App', children: [ref('child')] },
+                child: { app: 'TEST-APP' }
+            });
+
+            const tree = await builder.build({
+                name: 'test-app', type: 'app',
+                children: [ref('parent')]
+            });
+
+            const parent = tree.children[0];
+            const child = parent.children[0];
+
+            assert.equal(parent.collapsed, undefined); // 'Test-App' matches 'test-app'
+            assert.equal(child.collapsed, undefined);  // 'TEST-APP' matches 'test-app'
+        });
+    });
+
     describe('app boundary crossing', () => {
         it('should collapse function with different app', async () => {
             builder.defineFunctions({
