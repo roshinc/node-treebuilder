@@ -273,6 +273,7 @@ const builder = new TreeBuilder({
     unresolvedSeverity: 'warning',        // 'error' or 'warning' (default: 'warning')
     filterEmptyUiServiceMethods: false,   // Omit ui-service-methods with no children (default: false)
     filterEmptyUiServices: false,         // Omit ui-services with no children (default: false)
+    showMinimal: false,                   // Collapse function nodes that cross app boundaries (default: false)
     logLevel: 'error',                    // Console logger level: 'error' | 'warn' | 'debug' (default: 'error')
     logger: customLogger                  // Optional logger with error/warn/debug methods
 });
@@ -283,6 +284,7 @@ const builder = new TreeBuilder({
 | `unresolvedSeverity` | `'warning'` | Type of node created for unresolved function references (`'error'` or `'warning'`) |
 | `filterEmptyUiServiceMethods` | `false` | When `true`, ui-service-method nodes with no children are omitted from output |
 | `filterEmptyUiServices` | `false` | When `true`, ui-services nodes with no children (after filtering methods) are omitted from output |
+| `showMinimal` | `false` | When `true`, adds `collapsed: true` to function nodes that cross an app boundary (function `app` differs from the root app template name, case-insensitive). Once a boundary is crossed, all deeper function nodes stay collapsed. ui-service-method nodes are never collapsed |
 | `logLevel` | `'error'` | Log level for the built-in console logger (`'error'`, `'warn'`, or `'debug'`). Ignored when a custom `logger` is provided |
 | `logger` | `null` | Custom logger object with `error`, `warn`, `debug` methods. When provided, `logLevel` is ignored |
 
