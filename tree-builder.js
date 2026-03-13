@@ -200,6 +200,106 @@ class TreeBuilder {
     };
   }
 
+  _createUnresolvedNode(name) {
+    this._log('warn', 'Unresolved function reference', { ref: name });
+    return {
+      name: `dependency to ${name} could not be resolved so the tree may be incomplete`,
+      type: this.config.unresolvedSeverity,
+      _unresolvedRef: name
+    };
+  }
+
+  _createFunctionNodeContext(name, visited, path) {
+    const normalizedName = this._normalizeName(name);
+
+    if (visited.has(normalizedName)) {
+      const displayName = this._getDisplayName(name);
+      return { earlyResult: this._createCycleStopper(displayName, path) };
+    }
+
+    const def = this.functionDefs.get(normalizedName);
+    if (!def) {
+      return { earlyResult: this._createUnresolvedNode(name) };
+    }
+    const { children, app, queueName, displayName, usesLegacyGatewayHttpClient, ctg, ...props } = def;
+    const outputName = displayName || name;
+    const nextVisited = new Set(visited);
+    nextVisited.add(normalizedName);
+    const nextPath = [...path, outputName];
+
+    let finalProps = { ...props };
+    if (app) {
+      const appMetadataLine = { text: app, clickable: false };
+      finalProps.metadata_lines = [
+        appMetadataLine,
+        ...(props.metadata_lines || [])
+      ];
+    }
+
+    const resolved = {
+      name: outputName,
+      type: ctg === true ? 'ctg' : 'function',
+      ...finalProps
+    };
+    if (app) resolved.app = app;
+
+    return {
+      children,
+      usesLegacyGatewayHttpClient,
+      isCtg: ctg === true,
+      resolved,
+      nextVisited,
+      nextPath,
+      logExtraData: app ? { app } : {}
+    };
+  }
+
+  _finalizeFunctionNode(context, resolved) {
+    return this._applyLogMetadataLine(resolved, context.logExtraData, {});
+  }
+
+  async _resolveFunctionByMode(name, visited, path, mode) {
+    const context = this._createFunctionNodeContext(name, visited, path);
+    if (context.earlyResult) {
+      return context.earlyResult;
+    }
+
+    const {
+      children,
+      usesLegacyGatewayHttpClient,
+      isCtg,
+      resolved,
+      nextVisited,
+      nextPath
+    } = context;
+
+    if (isCtg) {
+      return this._finalizeFunctionNode(context, resolved);
+    }
+
+    const hasChildren = children && children.length > 0;
+    if (mode === 'full' && hasChildren) {
+      resolved.children = await Promise.all(
+        children.map(child => this._resolveChild(child, nextVisited, nextPath))
+      );
+    } else if (mode === 'shallow' && hasChildren) {
+      resolved.children = await Promise.all(
+        children.map(child => this._resolveChildAsLeafOrLoadable(child, nextVisited, nextPath))
+      );
+    } else if (mode === 'leaf-or-loadable' && hasChildren) {
+      resolved.loadChildren = true;
+    }
+
+    const shouldAppendSmartChild = usesLegacyGatewayHttpClient === true
+      && (mode !== 'leaf-or-loadable' || !hasChildren);
+    if (shouldAppendSmartChild) {
+      if (!resolved.children) resolved.children = [];
+      resolved.children.push({ name: 'SMART Call Over HTTPS', type: 'smart' });
+    }
+
+    return this._finalizeFunctionNode(context, resolved);
+  }
+
   /**
    * Resolve a function and cache it.
    * Cycle detection is path-based during this phase.
@@ -226,62 +326,14 @@ class TreeBuilder {
       return await this.inFlightResolutions.get(cacheKey);
     }
 
-    const def = this.functionDefs.get(normalizedName);
-    if (!def) {
-      // Undefined function becomes error/warning node
-      this._log('warn', 'Unresolved function reference', { ref: name });
-      const unresolvedNode = {
-        name: `dependency to ${name} could not be resolved so the tree may be incomplete`,
-        type: this.config.unresolvedSeverity,
-        _unresolvedRef: name
-      };
+    if (!this.functionDefs.has(normalizedName)) {
+      const unresolvedNode = this._createUnresolvedNode(name);
       this.resolvedFunctions.set(cacheKey, unresolvedNode);
       return unresolvedNode;
     }
 
     const resolvePromise = (async () => {
-      // Use displayName from definition for output
-      const { children, app, queueName, displayName, usesLegacyGatewayHttpClient, ctg, ...props } = def;
-      const outputName = displayName || name;
-
-      const newVisited = new Set(visited);
-      newVisited.add(normalizedName);
-      const newPath = [...path, outputName];
-
-      // Transform 'app' field into a metadata_line entry
-      // Note: queueName is extracted but not included in output - it's used for async refs to this function
-      let finalProps = { ...props };
-      if (app) {
-        const appMetadataLine = { text: app, clickable: false };
-        finalProps.metadata_lines = [
-          appMetadataLine,
-          ...(props.metadata_lines || [])
-        ];
-      }
-
-      // Create node (use displayName for the output name)
-      const resolved = {
-        name: outputName,
-        type: ctg === true ? 'ctg' : 'function',
-        ...finalProps
-      };
-      if (app) resolved.app = app;
-
-      // Resolve children
-      if (children && children.length > 0 && ctg !== true) {
-        resolved.children = await Promise.all(
-          children.map(child => this._resolveChild(child, newVisited, newPath))
-        );
-      }
-
-      // Append "SMART Call Over HTTPS" leaf if usesLegacyGatewayHttpClient is true (not for ctg nodes, which are always leaves)
-      if (usesLegacyGatewayHttpClient === true && ctg !== true) {
-        if (!resolved.children) resolved.children = [];
-        resolved.children.push({ name: 'SMART Call Over HTTPS', type: 'smart' });
-      }
-
-      // Apply "Logs" metadata_line if the log decider approves
-      const finalResolved = this._applyLogMetadataLine(resolved, app ? { app } : {}, {});
+      const finalResolved = await this._resolveFunctionByMode(name, visited, path, 'full');
       this.resolvedFunctions.set(cacheKey, finalResolved);
       return finalResolved;
     })();
@@ -773,67 +825,7 @@ class TreeBuilder {
    * Each child is resolved via _resolveChildAsLeafOrLoadable.
    */
   async _resolveFunctionShallow(name, visited, path) {
-    const normalizedName = this._normalizeName(name);
-
-    // Cycle detection
-    if (visited.has(normalizedName)) {
-      const displayName = this._getDisplayName(name);
-      return this._createCycleStopper(displayName, path);
-    }
-
-    const def = this.functionDefs.get(normalizedName);
-    if (!def) {
-      this._log('warn', 'Unresolved function reference', { ref: name });
-      return {
-        name: `dependency to ${name} could not be resolved so the tree may be incomplete`,
-        type: this.config.unresolvedSeverity,
-        _unresolvedRef: name
-      };
-    }
-
-    const { children, app, queueName, displayName, usesLegacyGatewayHttpClient, ctg, ...props } = def;
-    const outputName = displayName || name;
-
-    const newVisited = new Set(visited);
-    newVisited.add(normalizedName);
-    const newPath = [...path, outputName];
-
-    // Transform 'app' field into metadata_line
-    let finalProps = { ...props };
-    if (app) {
-      const appMetadataLine = { text: app, clickable: false };
-      finalProps.metadata_lines = [
-        appMetadataLine,
-        ...(props.metadata_lines || [])
-      ];
-    }
-
-    const resolved = {
-      name: outputName,
-      type: ctg === true ? 'ctg' : 'function',
-      ...finalProps
-    };
-    if (app) resolved.app = app;
-
-    // ctg nodes are always leaves
-    if (ctg === true) {
-      return this._applyLogMetadataLine(resolved, app ? { app } : {}, {});
-    }
-
-    // Resolve immediate children shallowly
-    if (children && children.length > 0) {
-      resolved.children = await Promise.all(
-        children.map(child => this._resolveChildAsLeafOrLoadable(child, newVisited, newPath))
-      );
-    }
-
-    // Append SMART child if needed
-    if (usesLegacyGatewayHttpClient === true) {
-      if (!resolved.children) resolved.children = [];
-      resolved.children.push({ name: 'SMART Call Over HTTPS', type: 'smart' });
-    }
-
-    return this._applyLogMetadataLine(resolved, app ? { app } : {}, {});
+    return await this._resolveFunctionByMode(name, visited, path, 'shallow');
   }
 
   /**
@@ -929,60 +921,7 @@ class TreeBuilder {
    * loadChildren and children are mutually exclusive.
    */
   async _resolveFunctionAsLeafOrLoadable(name, visited, path) {
-    const normalizedName = this._normalizeName(name);
-
-    // Cycle detection
-    if (visited.has(normalizedName)) {
-      const displayName = this._getDisplayName(name);
-      return this._createCycleStopper(displayName, path);
-    }
-
-    const def = this.functionDefs.get(normalizedName);
-    if (!def) {
-      this._log('warn', 'Unresolved function reference', { ref: name });
-      return {
-        name: `dependency to ${name} could not be resolved so the tree may be incomplete`,
-        type: this.config.unresolvedSeverity,
-        _unresolvedRef: name
-      };
-    }
-
-    const { children, app, queueName, displayName, usesLegacyGatewayHttpClient, ctg, ...props } = def;
-    const outputName = displayName || name;
-
-    // Transform 'app' field into metadata_line
-    let finalProps = { ...props };
-    if (app) {
-      const appMetadataLine = { text: app, clickable: false };
-      finalProps.metadata_lines = [
-        appMetadataLine,
-        ...(props.metadata_lines || [])
-      ];
-    }
-
-    const resolved = {
-      name: outputName,
-      type: ctg === true ? 'ctg' : 'function',
-      ...finalProps
-    };
-    if (app) resolved.app = app;
-
-    // ctg nodes are always leaves
-    if (ctg === true) {
-      return this._applyLogMetadataLine(resolved, app ? { app } : {}, {});
-    }
-
-    const hasChildren = children && children.length > 0;
-
-    if (hasChildren) {
-      // loadChildren and children are mutually exclusive
-      resolved.loadChildren = true;
-    } else if (usesLegacyGatewayHttpClient === true) {
-      // No real children, but SMART child is a static leaf — include directly
-      resolved.children = [{ name: 'SMART Call Over HTTPS', type: 'smart' }];
-    }
-
-    return this._applyLogMetadataLine(resolved, app ? { app } : {}, {});
+    return await this._resolveFunctionByMode(name, visited, path, 'leaf-or-loadable');
   }
 
   static ref(name) {
@@ -1015,3 +954,4 @@ const asyncRef = TreeBuilder.asyncRef;
 const topicPublishRef = TreeBuilder.topicPublishRef;
 
 export { TreeBuilder, LogDecider, ref, asyncRef, topicPublishRef };
+
