@@ -37,7 +37,7 @@ class TreeBuilder {
       unresolvedSeverity, // 'error' or 'warning'
       filterEmptyUiServiceMethods, // omit ui-service-methods with no children
       filterEmptyUiServices, // omit ui-services with no children (after filtering methods)
-      showMinimal // add collapsed: true hint to function, ui-service-method, and timer nodes
+      showMinimal // add collapsed: true hint to deeply nested function nodes
     };
   }
 
@@ -571,10 +571,12 @@ class TreeBuilder {
 
   /**
    * Post-process a built tree to add collapsed: true hints for showMinimal mode.
+   * Only collapses function nodes nested inside other functions (not at template level).
    * Creates shallow copies only for nodes it modifies.
    * @param {object} node - The node to process
+   * @param {boolean} atTemplateLevel - Whether this node is at the template level (direct child of app/structural nodes)
    */
-  _applyShowMinimal(node) {
+  _applyShowMinimal(node, atTemplateLevel = true) {
     if (!node) return node;
 
     let result = node;
@@ -582,9 +584,10 @@ class TreeBuilder {
 
     // Recurse into children first (bottom-up)
     if (node.children && node.children.length > 0) {
-      const newChildren = node.children.map(child =>
-        this._applyShowMinimal(child)
-      );
+      const newChildren = node.children.map(child => {
+        const childAtTemplateLevel = node.type === 'function' ? false : atTemplateLevel;
+        return this._applyShowMinimal(child, childAtTemplateLevel);
+      });
       if (newChildren.some((c, i) => c !== node.children[i])) {
         result = { ...result, children: newChildren };
         modified = true;
@@ -593,8 +596,7 @@ class TreeBuilder {
 
     const hasChildren = result.children && result.children.length > 0;
     const shouldCollapse =
-      (node.type === 'function' && hasChildren) ||
-      (node.type === 'ui-service-method' && hasChildren);
+      node.type === 'function' && hasChildren && !atTemplateLevel;
 
     if (shouldCollapse) {
       if (!modified) result = { ...result };

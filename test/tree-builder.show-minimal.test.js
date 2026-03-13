@@ -31,7 +31,7 @@ describe('TreeBuilder showMinimal', () => {
     });
 
     describe('function nodes', () => {
-        it('should set collapsed on function with children', async () => {
+        it('should not set collapsed on template-level function with children', async () => {
             builder.defineFunctions({
                 parent: { children: [ref('child')] },
                 child: {}
@@ -43,7 +43,7 @@ describe('TreeBuilder showMinimal', () => {
             });
 
             assert.equal(tree.children[0].type, 'function');
-            assert.equal(tree.children[0].collapsed, true);
+            assert.equal(tree.children[0].collapsed, undefined);
         });
 
         it('should not set collapsed on leaf function', async () => {
@@ -58,7 +58,7 @@ describe('TreeBuilder showMinimal', () => {
             assert.equal(tree.children[0].collapsed, undefined);
         });
 
-        it('should set collapsed on nested functions (A -> B -> C)', async () => {
+        it('should only collapse nested functions, not template-level (A -> B -> C)', async () => {
             builder.defineFunctions({
                 a: { children: [ref('b')] },
                 b: { children: [ref('c')] },
@@ -74,14 +74,33 @@ describe('TreeBuilder showMinimal', () => {
             const b = a.children[0];
             const c = b.children[0];
 
-            assert.equal(a.collapsed, true);
-            assert.equal(b.collapsed, true);
-            assert.equal(c.collapsed, undefined);
+            assert.equal(a.collapsed, undefined); // template-level
+            assert.equal(b.collapsed, true);       // nested under function a
+            assert.equal(c.collapsed, undefined);  // leaf
+        });
+
+        it('should collapse deeply nested function but not template-level parent', async () => {
+            builder.defineFunctions({
+                parent: { children: [ref('child')] },
+                child: { children: [ref('grandchild')] },
+                grandchild: {}
+            });
+
+            const tree = await builder.build({
+                name: 'test-app', type: 'app',
+                children: [ref('parent')]
+            });
+
+            const parent = tree.children[0];
+            const child = parent.children[0];
+
+            assert.equal(parent.collapsed, undefined); // template-level
+            assert.equal(child.collapsed, true);       // nested, has children
         });
     });
 
     describe('ui-service-method nodes', () => {
-        it('should set collapsed on ui-service-method with children', async () => {
+        it('should not set collapsed on ui-service-method with children', async () => {
             builder.defineFunctions({ funcA: {} });
 
             const tree = await builder.build({
@@ -97,7 +116,7 @@ describe('TreeBuilder showMinimal', () => {
 
             const method = tree.children[0].children[0];
             assert.equal(method.type, 'ui-service-method');
-            assert.equal(method.collapsed, true);
+            assert.equal(method.collapsed, undefined);
         });
 
         it('should not set collapsed on empty ui-service-method', async () => {
@@ -115,6 +134,33 @@ describe('TreeBuilder showMinimal', () => {
             const methods = tree.children[0].children;
             assert.equal(methods[0].collapsed, undefined);
             assert.equal(methods[1].collapsed, undefined);
+        });
+
+        it('should not collapse function under ui-service-method but should collapse its nested child', async () => {
+            builder.defineFunctions({
+                svcFunc: { children: [ref('nested')] },
+                nested: { children: [ref('leaf')] },
+                leaf: {}
+            });
+
+            const tree = await builder.build({
+                name: 'test-app', type: 'app',
+                children: [{
+                    name: 'Services', type: 'ui-services',
+                    children: [{
+                        name: 'method1', type: 'ui-service-method',
+                        children: [ref('svcFunc')]
+                    }]
+                }]
+            });
+
+            const method = tree.children[0].children[0];
+            const svcFunc = method.children[0];
+            const nested = svcFunc.children[0];
+
+            assert.equal(method.collapsed, undefined);  // ui-service-method never collapsed
+            assert.equal(svcFunc.collapsed, undefined);  // template-level (under ui-service-method)
+            assert.equal(nested.collapsed, true);        // nested under function, has children
         });
     });
 
@@ -151,7 +197,7 @@ describe('TreeBuilder showMinimal', () => {
     });
 
     describe('async refs (timer nodes)', () => {
-        it('should set collapsed on inner function of timer when it has children', async () => {
+        it('should not set collapsed on template-level inner function of timer', async () => {
             builder.defineFunctions({
                 asyncFunc: { children: [ref('child')] },
                 child: {}
@@ -167,7 +213,7 @@ describe('TreeBuilder showMinimal', () => {
             assert.equal(timer.type, 'timer');
             assert.equal(timer.collapsed, undefined);
             assert.equal(innerFunc.type, 'function');
-            assert.equal(innerFunc.collapsed, true);
+            assert.equal(innerFunc.collapsed, undefined); // template-level (timer passes through)
         });
 
         it('should not set collapsed when inner function is a leaf', async () => {
@@ -204,7 +250,7 @@ describe('TreeBuilder showMinimal', () => {
     });
 
     describe('same function as sync and async ref', () => {
-        it('should collapse both sync and async inner function the same way', async () => {
+        it('should not collapse template-level sync or async refs', async () => {
             builder.defineFunctions({
                 sharedFunc: { children: [ref('child')] },
                 child: {}
@@ -222,22 +268,22 @@ describe('TreeBuilder showMinimal', () => {
             const timer = tree.children[1];
             const asyncInner = timer.children[0];
 
-            // Sync ref gets collapsed
+            // Sync ref is template-level, not collapsed
             assert.equal(syncRef.type, 'function');
-            assert.equal(syncRef.collapsed, true);
+            assert.equal(syncRef.collapsed, undefined);
 
             // Timer does NOT get collapsed
             assert.equal(timer.type, 'timer');
             assert.equal(timer.collapsed, undefined);
 
-            // Inner function gets collapsed (has children)
+            // Inner function is template-level (timer passes through), not collapsed
             assert.equal(asyncInner.type, 'function');
-            assert.equal(asyncInner.collapsed, true);
+            assert.equal(asyncInner.collapsed, undefined);
         });
     });
 
     describe('timer inside function', () => {
-        it('should collapse the parent function and inner function, not the timer', async () => {
+        it('should collapse nested inner function but not template-level outer or the timer', async () => {
             builder.defineFunctions({
                 outer: { children: [asyncRef('inner', 'Q.NAME')] },
                 inner: { children: [ref('leaf')] },
@@ -253,9 +299,9 @@ describe('TreeBuilder showMinimal', () => {
             const timer = outer.children[0];
             const inner = timer.children[0];
 
-            assert.equal(outer.collapsed, true);
+            assert.equal(outer.collapsed, undefined); // template-level
             assert.equal(timer.collapsed, undefined);
-            assert.equal(inner.collapsed, true);
+            assert.equal(inner.collapsed, true); // nested under function outer
         });
     });
 
@@ -272,9 +318,9 @@ describe('TreeBuilder showMinimal', () => {
                 children: [ref('parent')]
             };
 
-            // Build with showMinimal
+            // Build with showMinimal — template-level function is not collapsed
             const minimalTree = await minimalBuilder.build(app);
-            assert.equal(minimalTree.children[0].collapsed, true);
+            assert.equal(minimalTree.children[0].collapsed, undefined);
 
             // Build again without showMinimal (new builder, same definitions)
             const normalBuilder = new TreeBuilder();
@@ -312,10 +358,10 @@ describe('TreeBuilder showMinimal', () => {
 
             // Empty method was filtered out
             assert.equal(tree.children[0].children.length, 1);
-            // Remaining method with children gets collapsed
+            // ui-service-method is never collapsed
             const method = tree.children[0].children[0];
             assert.equal(method.name, 'withChildren');
-            assert.equal(method.collapsed, true);
+            assert.equal(method.collapsed, undefined);
         });
     });
 });
