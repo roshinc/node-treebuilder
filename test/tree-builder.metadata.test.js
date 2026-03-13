@@ -139,7 +139,7 @@ describe('TreeBuilder', () => {
             assert.equal(func.metadata_lines[0].data, undefined);
         });
 
-        it('should not include app field in output node', async () => {
+        it('should preserve app field on output node', async () => {
             builder.defineFunctions({
                 funcWithApp: {
                     app: 'MyApp'
@@ -155,7 +155,7 @@ describe('TreeBuilder', () => {
             const tree = await builder.build(app);
             const func = tree.children[0];
 
-            assert.equal(func.app, undefined, 'app field should not be in output');
+            assert.equal(func.app, 'MyApp', 'app field should be preserved on output');
         });
 
         it('should prepend app metadata_line before existing metadata_lines', async () => {

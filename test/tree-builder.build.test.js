@@ -703,7 +703,7 @@ describe('TreeBuilder', () => {
             assert.equal(func.children[0].name, 'SMART Call Over HTTPS');
             assert.equal(func.children[0].type, 'smart');
             assert.equal(func.usesLegacyGatewayHttpClient, undefined);
-            assert.equal(func.app, undefined);
+            assert.equal(func.app, 'MyApp');
         });
 
         it('should append SMART child in both sync and async usage of function with flag', async () => {
@@ -923,7 +923,7 @@ describe('TreeBuilder', () => {
             assert.equal(func.metadata_lines[1].text, 'info');
             assert.equal(func.children, undefined);
             assert.equal(func.ctg, undefined);
-            assert.equal(func.app, undefined);
+            assert.equal(func.app, 'MyApp');
         });
 
         it('should ignore children defined on a ctg: true function', async () => {

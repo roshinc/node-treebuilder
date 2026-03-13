@@ -37,7 +37,7 @@ class TreeBuilder {
       unresolvedSeverity, // 'error' or 'warning'
       filterEmptyUiServiceMethods, // omit ui-service-methods with no children
       filterEmptyUiServices, // omit ui-services with no children (after filtering methods)
-      showMinimal // add collapsed: true hint to deeply nested function nodes
+      showMinimal // collapse function nodes that cross app boundaries
     };
   }
 
@@ -164,7 +164,7 @@ class TreeBuilder {
     // Second pass: build tree using cached functions
     const tree = await this._buildNode(rootStructure);
     // Post-process: add collapsed hints for showMinimal mode
-    const finalTree = this.config.showMinimal ? this._applyShowMinimal(tree) : tree;
+    const finalTree = this.config.showMinimal ? this._applyShowMinimal(tree, rootStructure.name) : tree;
     this._log('debug', 'Completed tree build', {
       resolvedFunctionContexts: this.resolvedFunctions.size
     });
@@ -265,6 +265,7 @@ class TreeBuilder {
         type: ctg === true ? 'ctg' : 'function',
         ...finalProps
       };
+      if (app) resolved.app = app;
 
       // Resolve children
       if (children && children.length > 0 && ctg !== true) {
@@ -571,23 +572,30 @@ class TreeBuilder {
 
   /**
    * Post-process a built tree to add collapsed: true hints for showMinimal mode.
-   * Only collapses function nodes nested inside other functions (not at template level).
+   * Collapses function nodes once an app boundary is crossed (function.app differs
+   * from rootAppName). Once crossed, all deeper nodes stay collapsed even if the
+   * app name matches again.
    * Creates shallow copies only for nodes it modifies.
    * @param {object} node - The node to process
-   * @param {boolean} atTemplateLevel - Whether this node is at the template level (direct child of app/structural nodes)
+   * @param {string} rootAppName - The root app template's name
+   * @param {boolean} crossedBoundary - Whether an app boundary has already been crossed
    */
-  _applyShowMinimal(node, atTemplateLevel = true) {
+  _applyShowMinimal(node, rootAppName, crossedBoundary = false) {
     if (!node) return node;
+
+    // Check if this function node crosses the app boundary
+    const nodeCrossesBoundary = node.type === 'function' &&
+      (!node.app || node.app !== rootAppName);
+    const isCrossed = crossedBoundary || nodeCrossesBoundary;
 
     let result = node;
     let modified = false;
 
     // Recurse into children first (bottom-up)
     if (node.children && node.children.length > 0) {
-      const newChildren = node.children.map(child => {
-        const childAtTemplateLevel = node.type === 'function' ? false : atTemplateLevel;
-        return this._applyShowMinimal(child, childAtTemplateLevel);
-      });
+      const newChildren = node.children.map(child =>
+        this._applyShowMinimal(child, rootAppName, isCrossed)
+      );
       if (newChildren.some((c, i) => c !== node.children[i])) {
         result = { ...result, children: newChildren };
         modified = true;
@@ -596,7 +604,7 @@ class TreeBuilder {
 
     const hasChildren = result.children && result.children.length > 0;
     const shouldCollapse =
-      node.type === 'function' && hasChildren && !atTemplateLevel;
+      node.type === 'function' && hasChildren && isCrossed;
 
     if (shouldCollapse) {
       if (!modified) result = { ...result };
@@ -805,6 +813,7 @@ class TreeBuilder {
       type: ctg === true ? 'ctg' : 'function',
       ...finalProps
     };
+    if (app) resolved.app = app;
 
     // ctg nodes are always leaves
     if (ctg === true) {
@@ -956,6 +965,7 @@ class TreeBuilder {
       type: ctg === true ? 'ctg' : 'function',
       ...finalProps
     };
+    if (app) resolved.app = app;
 
     // ctg nodes are always leaves
     if (ctg === true) {
