@@ -174,8 +174,32 @@ class TreeBuilder extends FunctionResolutionEngine {
   }
 
   async _buildNode(node, visited = new Set(), path = []) {
+    return await this._buildNodeByMode(node, visited, path, 'full');
+  }
+
+  _getBuildNodeModeConfig(mode) {
+    if (mode === 'full') {
+      return {
+        resolveFunction: (name, visited, path) => this._getFunctionWithCycleCheck(name, visited, path),
+        wrapperQueueNameProps: {}
+      };
+    }
+
+    if (mode === 'lazy') {
+      return {
+        resolveFunction: (name, visited, path) => this._resolveFunctionShallow(name, visited, path),
+        wrapperQueueNameProps: { queueName: undefined }
+      };
+    }
+
+    throw new Error(`Unsupported build mode: ${mode}`);
+  }
+
+  async _buildNodeByMode(node, visited = new Set(), path = [], mode = 'full') {
+    const { resolveFunction, wrapperQueueNameProps } = this._getBuildNodeModeConfig(mode);
+
     if (node.ref && !node.async && !node.topicPublish) {
-      return await this._getFunctionWithCycleCheck(node.ref, visited, path);
+      return await resolveFunction(node.ref, visited, path);
     }
 
     if (node.ref && node.async) {
@@ -204,8 +228,9 @@ class TreeBuilder extends FunctionResolutionEngine {
         type: 'timer',
         ...queueProps,
         ...resolvedProps,
+        ...wrapperQueueNameProps,
         ...(metadataLines ? { metadata_lines: metadataLines } : {}),
-        children: [await this._getFunctionWithCycleCheck(ref, visited, path)]
+        children: [await resolveFunction(ref, visited, path)]
       }, {}, { resolvedProps, resolverName: 'asyncResolver' });
     }
 
@@ -232,6 +257,7 @@ class TreeBuilder extends FunctionResolutionEngine {
         type: 'topic',
         ...queueProps,
         ...resolvedProps,
+        ...wrapperQueueNameProps,
         ...(metadataLines ? { metadata_lines: metadataLines } : {})
       }, {}, { resolvedProps, resolverName: 'topicPublishResolver' });
     }
@@ -260,7 +286,7 @@ class TreeBuilder extends FunctionResolutionEngine {
     }
 
     const resolvedChildren = await Promise.all(node.children.map(child =>
-      this._buildNode(child, newVisited, newPath)
+      this._buildNodeByMode(child, newVisited, newPath, mode)
     ));
     result.children = resolvedChildren.filter(child => child !== null);
 
@@ -356,118 +382,7 @@ class TreeBuilder extends FunctionResolutionEngine {
   }
 
   async _buildNodeLazy(node, visited = new Set(), path = []) {
-    if (node.ref && !node.async && !node.topicPublish) {
-      return await this._resolveFunctionShallow(node.ref, visited, path);
-    }
-
-    if (node.ref && node.async) {
-      const { ref: refName, async: _, queueName, asyncRef: _a, syncRef: _s, topicRef: _t, ...queueProps } = node;
-
-      const normalizedRef = this._normalizeName(refName);
-      const funcDef = this._getFunctionDefs().get(normalizedRef);
-      const funcQueueName = funcDef?.queueName;
-      const displayName = this._getDisplayName(refName);
-
-      const effectiveQueueName = queueName || funcQueueName;
-      const { resolvedProps, errorMetadataLines } = await this._resolveExternalProps(
-        this.asyncResolver,
-        'asyncResolver',
-        [refName, effectiveQueueName]
-      );
-
-      const finalQueueName = resolvedProps.queueName || queueName || funcQueueName || `${displayName}_queue`;
-      const metadataLines = this._mergeMetadataLines(
-        errorMetadataLines,
-        queueProps.metadata_lines,
-        resolvedProps.metadata_lines
-      );
-
-      return this._applyLogMetadataLine({
-        name: finalQueueName,
-        type: 'timer',
-        ...queueProps,
-        ...resolvedProps,
-        queueName: undefined,
-        ...(metadataLines ? { metadata_lines: metadataLines } : {}),
-        children: [await this._resolveFunctionShallow(refName, visited, path)]
-      }, {}, { resolvedProps, resolverName: 'asyncResolver' });
-    }
-
-    if (node.topicPublish) {
-      const { ref: refName, topicName, topicPublish: _, queueName, ...queueProps } = node;
-      const effectiveTopicName = topicName || 'unknown topic';
-      const { resolvedProps, errorMetadataLines } = await this._resolveExternalProps(
-        this.topicPublishResolver,
-        'topicPublishResolver',
-        [effectiveTopicName, queueName]
-      );
-
-      const finalQueueName = resolvedProps.queueName
-        || queueName
-        || (topicName ? `${topicName}_queue` : 'unknown topic');
-      const metadataLines = this._mergeMetadataLines(
-        errorMetadataLines,
-        queueProps.metadata_lines,
-        resolvedProps.metadata_lines
-      );
-
-      return this._applyLogMetadataLine({
-        name: finalQueueName,
-        type: 'topic',
-        ...queueProps,
-        ...resolvedProps,
-        queueName: undefined,
-        ...(metadataLines ? { metadata_lines: metadataLines } : {})
-      }, {}, { resolvedProps, resolverName: 'topicPublishResolver' });
-    }
-
-    const { usesLegacyGatewayHttpClient, ctg, ...nodeWithoutFlag } = node;
-    const result = { ...nodeWithoutFlag };
-
-    if (!node.children) {
-      if (usesLegacyGatewayHttpClient === true) {
-        result.children = [{ name: 'SMART Call Over HTTPS', type: 'smart' }];
-      }
-      return this._applyLogMetadataLine(result, {}, {});
-    }
-
-    let newVisited = visited;
-    let newPath = path;
-    if (this._shouldTrack(node.type) && node.name) {
-      const normalizedNodeName = this._normalizeName(node.name);
-      if (visited.has(normalizedNodeName)) {
-        return this._createCycleStopper(node.name, path);
-      }
-      newVisited = new Set(visited);
-      newVisited.add(normalizedNodeName);
-      newPath = [...path, node.name];
-    }
-
-    const resolvedChildren = await Promise.all(node.children.map(child =>
-      this._buildNodeLazy(child, newVisited, newPath)
-    ));
-    result.children = resolvedChildren.filter(child => child !== null);
-
-    if (usesLegacyGatewayHttpClient === true) {
-      result.children.push({ name: 'SMART Call Over HTTPS', type: 'smart' });
-    }
-
-    if (this.config.filterEmptyUiServiceMethods && node.type === 'ui-services') {
-      result.children = result.children.filter(child => {
-        if (child.type === 'ui-service-method') {
-          return child.children && child.children.length > 0;
-        }
-        return true;
-      });
-    }
-
-    if (this.config.filterEmptyUiServices && node.type === 'ui-services') {
-      if (!result.children || result.children.length === 0) {
-        return null;
-      }
-    }
-
-    return this._applyLogMetadataLine(result, {}, {});
+    return await this._buildNodeByMode(node, visited, path, 'lazy');
   }
 
   static ref(name) {
