@@ -121,7 +121,6 @@ class TreeBuilder extends FunctionResolutionEngine {
     }
 
     if (!this.internalCompiledPool) {
-      this._invalidateInternalCompiledPool();
       this.internalCompiledPool = await compileFunctionPool(this.functionDefs, this._getCompileOptions());
     }
 
