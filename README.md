@@ -62,6 +62,39 @@ const tree = await builder.build({
 });
 ```
 
+### Reusing a Pre-Resolved Function Pool
+
+If you build multiple trees from the same function pool, you can precompile the fully resolved function cache once and reuse it across builders:
+
+```javascript
+import { TreeBuilder, compileFunctionPool, ref, asyncRef } from './tree-builder.js';
+
+const functionPool = {
+    childFunc: {},
+    parentFunc: {
+        children: [asyncRef('childFunc')]
+    }
+};
+
+const compiledPool = await compileFunctionPool(functionPool, {
+    asyncResolver: (funcName, queueName) => ({ queueName })
+});
+
+const builder = new TreeBuilder({ compiledPool, showMinimal: true });
+const tree = await builder.build({
+    name: 'my-app',
+    type: 'app',
+    children: [{ ref: 'parentFunc' }]
+});
+```
+
+You can also attach a compiled pool after construction:
+
+```javascript
+const builder = new TreeBuilder();
+builder.setCompiledPool(compiledPool);
+```
+
 ## JSON Configuration Format
 
 ### App Configuration (`config/apps/*.json`)
@@ -249,6 +282,14 @@ const builder = new TreeBuilder(config?);
 builder.defineFunction(name, children?, extraProps?);
 builder.defineFunctions(functionPoolObject);
 
+// Optional: precompile the function pool for reuse across builds/builders
+const compiledPool = await compileFunctionPool(functionPoolObject, {
+  asyncResolver,
+  topicPublishResolver,
+  logDecider,
+  unresolvedSeverity: 'warning'
+});
+
 // Set resolvers for async/topic references
 builder.setAsyncResolver((funcName, queueName) => ({ queueName, depth }));
 builder.setTopicPublishResolver((topicName, queueName) => ({ queueName }));
@@ -263,6 +304,18 @@ const tree = await builder.build(appStructure);
 const lazyTree = await builder.buildLazy(appStructure);
 const expanded = await builder.buildLazyFrom('functionName');
 ```
+
+#### Compiled Function Pool Validity
+
+`compileFunctionPool()` caches the fully resolved function subtree output. Reuse a compiled pool only while these inputs are effectively unchanged:
+
+- The function pool contents
+- `asyncResolver`
+- `topicPublishResolver`
+- `logDecider`
+- `unresolvedSeverity`
+
+Changing app roots or build-time tree shaping options such as `showMinimal`, `filterEmptyUiServiceMethods`, or `filterEmptyUiServices` does not require recompiling the function pool.
 
 #### Configuration Options
 

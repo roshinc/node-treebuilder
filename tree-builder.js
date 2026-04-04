@@ -1,6 +1,8 @@
 /**
  * Tree Builder Utility
  */
+import { compileFunctionPool } from './function-pool-compiler.js';
+
 const DEFAULT_LOG_LEVEL = process.env.TREE_BUILDER_LOG_LEVEL || 'error';
 const LOG_LEVELS = { error: 0, warn: 1, debug: 2 };
 
@@ -21,6 +23,7 @@ class TreeBuilder {
       filterEmptyUiServiceMethods = false,
       filterEmptyUiServices = false,
       showMinimal = false,
+      compiledPool = null,
       logger,
       logLevel = DEFAULT_LOG_LEVEL
     } = config;
@@ -28,6 +31,8 @@ class TreeBuilder {
     this.functionDefs = new Map();      // registry of function definitions
     this.resolvedFunctions = new Map(); // cache of resolved function subtrees
     this.inFlightResolutions = new Map(); // tracks promises for in-flight async function resolutions keyed by function and visited context, allowing concurrent callers to share the same promise and avoid duplicate work
+    this.externalCompiledPool = compiledPool;
+    this.internalCompiledPool = null;
     this.asyncResolver = null; // resolver to get the queue stats
     this.topicPublishResolver = null;
     this.logDecider = null; // decides which nodes get a "Logs" metadata_line
@@ -59,16 +64,25 @@ class TreeBuilder {
 
   setAsyncResolver(resolver) {
     this.asyncResolver = resolver;
+    this._invalidateInternalCompiledPool();
     return this;
   }
 
   setTopicPublishResolver(resolver) {
     this.topicPublishResolver = resolver;
+    this._invalidateInternalCompiledPool();
     return this;
   }
 
   setLogDecider(decider) {
     this.logDecider = decider;
+    this._invalidateInternalCompiledPool();
+    return this;
+  }
+
+  setCompiledPool(compiledPool) {
+    this.externalCompiledPool = compiledPool;
+    this._invalidateInternalCompiledPool();
     return this;
   }
 
@@ -112,6 +126,48 @@ class TreeBuilder {
     return merged.length > 0 ? merged : undefined;
   }
 
+  _invalidateInternalCompiledPool() {
+    this.internalCompiledPool = null;
+    this.resolvedFunctions.clear();
+    this.inFlightResolutions.clear();
+  }
+
+  _invalidateCompiledPools() {
+    this.externalCompiledPool = null;
+    this._invalidateInternalCompiledPool();
+  }
+
+  _getActiveCompiledPool() {
+    return this.externalCompiledPool || this.internalCompiledPool;
+  }
+
+  _getFunctionDefs() {
+    return this._getActiveCompiledPool()?.functionDefs || this.functionDefs;
+  }
+
+  _getCompileOptions() {
+    return {
+      asyncResolver: this.asyncResolver,
+      topicPublishResolver: this.topicPublishResolver,
+      logDecider: this.logDecider,
+      unresolvedSeverity: this.config.unresolvedSeverity,
+      logger: this.logger
+    };
+  }
+
+  async _ensureCompiledPool() {
+    if (this.externalCompiledPool) {
+      return this.externalCompiledPool;
+    }
+
+    if (!this.internalCompiledPool) {
+      this._invalidateInternalCompiledPool();
+      this.internalCompiledPool = await compileFunctionPool(this.functionDefs, this._getCompileOptions());
+    }
+
+    return this.internalCompiledPool;
+  }
+
   /**
    * Normalize a function name for case-insensitive lookup.
    */
@@ -125,7 +181,7 @@ class TreeBuilder {
    */
   _getDisplayName(name) {
     const normalizedName = this._normalizeName(name);
-    const def = this.functionDefs.get(normalizedName);
+    const def = this._getFunctionDefs().get(normalizedName);
     return def?.displayName || name;
   }
 
@@ -134,6 +190,7 @@ class TreeBuilder {
     // Store with displayName if not already provided
     const propsWithDisplayName = extraProps.displayName ? extraProps : { displayName: name, ...extraProps };
     this.functionDefs.set(normalizedName, { children, ...propsWithDisplayName });
+    this._invalidateCompiledPools();
     return this;
   }
 
@@ -148,25 +205,23 @@ class TreeBuilder {
         ...propsWithDisplayName
       });
     }
+    this._invalidateCompiledPools();
     return this;
   }
 
   async build(rootStructure) {
+    const definedFunctions = this._getFunctionDefs();
     this._log('debug', 'Starting tree build', {
       rootName: rootStructure?.name,
-      definedFunctionCount: this.functionDefs.size
+      definedFunctionCount: definedFunctions.size
     });
-    // Clear cache for fresh build
-    this.resolvedFunctions.clear();
-    this.inFlightResolutions.clear();
-    // First pass: resolve all functions (builds cache)
-    await this._preResolveAllFunctions();
+    const compiledPool = await this._ensureCompiledPool();
     // Second pass: build tree using cached functions
     const tree = await this._buildNode(rootStructure);
     // Post-process: add collapsed hints for showMinimal mode
     const finalTree = this.config.showMinimal ? this._applyShowMinimal(tree, rootStructure.name?.toLowerCase()) : tree;
     this._log('debug', 'Completed tree build', {
-      resolvedFunctionContexts: this.resolvedFunctions.size
+      resolvedFunctionContexts: compiledPool.resolvedFunctions.size
     });
     return finalTree;
   }
@@ -217,7 +272,7 @@ class TreeBuilder {
       return { earlyResult: this._createCycleStopper(displayName, path) };
     }
 
-    const def = this.functionDefs.get(normalizedName);
+    const def = this._getFunctionDefs().get(normalizedName);
     if (!def) {
       return { earlyResult: this._createUnresolvedNode(name) };
     }
@@ -326,7 +381,7 @@ class TreeBuilder {
       return await this.inFlightResolutions.get(cacheKey);
     }
 
-    if (!this.functionDefs.has(normalizedName)) {
+    if (!this._getFunctionDefs().has(normalizedName)) {
       const unresolvedNode = this._createUnresolvedNode(name);
       this.resolvedFunctions.set(cacheKey, unresolvedNode);
       return unresolvedNode;
@@ -362,7 +417,7 @@ class TreeBuilder {
       // Look up the function definition's queueName (default queue for async refs to this function)
       // Use normalized name for case-insensitive lookup
       const normalizedRef = this._normalizeName(ref);
-      const funcDef = this.functionDefs.get(normalizedRef);
+      const funcDef = this._getFunctionDefs().get(normalizedRef);
       const funcQueueName = funcDef?.queueName;
       const displayName = this._getDisplayName(ref);
 
@@ -454,7 +509,7 @@ class TreeBuilder {
       // Look up the function definition's queueName (default queue for async refs to this function)
       // Use normalized name for case-insensitive lookup
       const normalizedRef = this._normalizeName(ref);
-      const funcDef = this.functionDefs.get(normalizedRef);
+      const funcDef = this._getFunctionDefs().get(normalizedRef);
       const funcQueueName = funcDef?.queueName;
       const displayName = this._getDisplayName(ref);
 
@@ -583,7 +638,7 @@ class TreeBuilder {
     }
 
     const cacheKey = this._getFunctionCacheKey(normalizedName, visited);
-    const cached = this.resolvedFunctions.get(cacheKey);
+    const cached = this._getActiveCompiledPool()?.resolvedFunctions.get(cacheKey) || this.resolvedFunctions.get(cacheKey);
     if (cached) {
       return cached;
     }
@@ -711,7 +766,7 @@ class TreeBuilder {
       const { ref: refName, async: _, queueName, asyncRef: _a, syncRef: _s, topicRef: _t, ...queueProps } = node;
 
       const normalizedRef = this._normalizeName(refName);
-      const funcDef = this.functionDefs.get(normalizedRef);
+      const funcDef = this._getFunctionDefs().get(normalizedRef);
       const funcQueueName = funcDef?.queueName;
       const displayName = this._getDisplayName(refName);
 
@@ -844,7 +899,7 @@ class TreeBuilder {
       const { ref: refName, async: _, queueName, asyncRef: _a, syncRef: _s, topicRef: _t, ...existingProps } = child;
 
       const normalizedRef = this._normalizeName(refName);
-      const funcDef = this.functionDefs.get(normalizedRef);
+      const funcDef = this._getFunctionDefs().get(normalizedRef);
       const funcQueueName = funcDef?.queueName;
       const displayName = this._getDisplayName(refName);
 
@@ -953,5 +1008,5 @@ const ref = TreeBuilder.ref;
 const asyncRef = TreeBuilder.asyncRef;
 const topicPublishRef = TreeBuilder.topicPublishRef;
 
-export { TreeBuilder, LogDecider, ref, asyncRef, topicPublishRef };
+export { TreeBuilder, LogDecider, compileFunctionPool, ref, asyncRef, topicPublishRef };
 
