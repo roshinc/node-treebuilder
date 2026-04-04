@@ -127,12 +127,6 @@ class TreeBuilder extends FunctionResolutionEngine {
     return this.internalCompiledPool;
   }
 
-  _getDisplayName(name) {
-    const normalizedName = this._normalizeName(name);
-    const def = this._getFunctionDefs().get(normalizedName);
-    return def?.displayName || name;
-  }
-
   defineFunction(name, children = [], extraProps = {}) {
     const normalizedName = this._normalizeName(name);
     const propsWithDisplayName = extraProps.displayName ? extraProps : { displayName: name, ...extraProps };
