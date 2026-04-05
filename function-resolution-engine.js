@@ -103,6 +103,76 @@ class FunctionResolutionEngine {
     return merged.length > 0 ? merged : undefined;
   }
 
+  _stripAsyncRefProps(node) {
+    const { ref: refName, async: _, queueName, asyncRef: _a, syncRef: _s, topicRef: _t, ...existingProps } = node;
+    return { refName, queueName, existingProps };
+  }
+
+  _stripTopicPublishProps(node) {
+    const { ref, topicName, topicPublish: _, queueName, ...existingProps } = node;
+    return { topicName, queueName, existingProps };
+  }
+
+  async _buildAsyncWrapper(node, visited, path, resolveFunction, wrapperProps = { queueName: undefined }) {
+    const { refName, queueName, existingProps } = this._stripAsyncRefProps(node);
+    const normalizedRef = this._normalizeName(refName);
+    const funcDef = this._getFunctionDefs().get(normalizedRef);
+    const funcQueueName = funcDef?.queueName;
+    const displayName = this._getDisplayName(refName);
+
+    const effectiveQueueName = queueName || funcQueueName;
+    const { resolvedProps, errorMetadataLines } = await this._resolveExternalProps(
+      this.asyncResolver,
+      'asyncResolver',
+      [refName, effectiveQueueName]
+    );
+
+    const finalQueueName = resolvedProps.queueName || queueName || funcQueueName || `${displayName}_queue`;
+    const metadataLines = this._mergeMetadataLines(
+      errorMetadataLines,
+      existingProps.metadata_lines,
+      resolvedProps.metadata_lines
+    );
+
+    return this._applyLogMetadataLine({
+      name: finalQueueName,
+      type: 'timer',
+      ...existingProps,
+      ...resolvedProps,
+      ...wrapperProps,
+      ...(metadataLines ? { metadata_lines: metadataLines } : {}),
+      children: [await resolveFunction(refName, visited, path)]
+    }, {}, { resolvedProps, resolverName: 'asyncResolver' });
+  }
+
+  async _buildTopicPublishNode(node, wrapperProps = { queueName: undefined }) {
+    const { topicName, queueName, existingProps } = this._stripTopicPublishProps(node);
+    const effectiveTopicName = topicName || 'unknown topic';
+    const { resolvedProps, errorMetadataLines } = await this._resolveExternalProps(
+      this.topicPublishResolver,
+      'topicPublishResolver',
+      [effectiveTopicName, queueName]
+    );
+
+    const finalQueueName = resolvedProps.queueName
+      || queueName
+      || (topicName ? `${topicName}_queue` : 'unknown topic');
+    const metadataLines = this._mergeMetadataLines(
+      errorMetadataLines,
+      existingProps.metadata_lines,
+      resolvedProps.metadata_lines
+    );
+
+    return this._applyLogMetadataLine({
+      name: finalQueueName,
+      type: 'topic',
+      ...existingProps,
+      ...resolvedProps,
+      ...wrapperProps,
+      ...(metadataLines ? { metadata_lines: metadataLines } : {})
+    }, {}, { resolvedProps, resolverName: 'topicPublishResolver' });
+  }
+
   _getFunctionCacheKey(name, visited = new Set()) {
     const normalizedName = this._normalizeName(name);
     const visitedKey = [...visited].sort().join('|');
@@ -275,63 +345,16 @@ class FunctionResolutionEngine {
     }
 
     if (child.ref && child.async) {
-      const { ref, async: _, queueName, asyncRef: _a, syncRef: _s, topicRef: _t, ...existingProps } = child;
-      const normalizedRef = this._normalizeName(ref);
-      const funcDef = this._getFunctionDefs().get(normalizedRef);
-      const funcQueueName = funcDef?.queueName;
-      const displayName = this._getDisplayName(ref);
-
-      const effectiveQueueName = queueName || funcQueueName;
-      const { resolvedProps, errorMetadataLines } = await this._resolveExternalProps(
-        this.asyncResolver,
-        'asyncResolver',
-        [ref, effectiveQueueName]
+      return this._buildAsyncWrapper(
+        child,
+        visited,
+        path,
+        (refName, nextVisited, nextPath) => this._resolveAndCacheFunction(refName, nextVisited, nextPath)
       );
-
-      const finalQueueName = resolvedProps.queueName || queueName || funcQueueName || `${displayName}_queue`;
-      const metadataLines = this._mergeMetadataLines(
-        errorMetadataLines,
-        existingProps.metadata_lines,
-        resolvedProps.metadata_lines
-      );
-
-      return this._applyLogMetadataLine({
-        name: finalQueueName,
-        type: 'timer',
-        ...existingProps,
-        ...resolvedProps,
-        queueName: undefined,
-        ...(metadataLines ? { metadata_lines: metadataLines } : {}),
-        children: [await this._resolveAndCacheFunction(ref, visited, path)]
-      }, {}, { resolvedProps, resolverName: 'asyncResolver' });
     }
 
     if (child.topicPublish) {
-      const { ref, topicName, topicPublish: _, queueName, ...existingProps } = child;
-      const effectiveTopicName = topicName || 'unknown topic';
-      const { resolvedProps, errorMetadataLines } = await this._resolveExternalProps(
-        this.topicPublishResolver,
-        'topicPublishResolver',
-        [effectiveTopicName, queueName]
-      );
-
-      const finalQueueName = resolvedProps.queueName
-        || queueName
-        || (topicName ? `${topicName}_queue` : 'unknown topic');
-      const metadataLines = this._mergeMetadataLines(
-        errorMetadataLines,
-        existingProps.metadata_lines,
-        resolvedProps.metadata_lines
-      );
-
-      return this._applyLogMetadataLine({
-        name: finalQueueName,
-        type: 'topic',
-        ...existingProps,
-        ...resolvedProps,
-        queueName: undefined,
-        ...(metadataLines ? { metadata_lines: metadataLines } : {})
-      }, {}, { resolvedProps, resolverName: 'topicPublishResolver' });
+      return this._buildTopicPublishNode(child);
     }
 
     if (child.type === 'queue' || child.type === 'timer' || child.type === 'topic') {
@@ -365,64 +388,16 @@ class FunctionResolutionEngine {
     }
 
     if (child.ref && child.async) {
-      const { ref: refName, async: _, queueName, asyncRef: _a, syncRef: _s, topicRef: _t, ...existingProps } = child;
-
-      const normalizedRef = this._normalizeName(refName);
-      const funcDef = this._getFunctionDefs().get(normalizedRef);
-      const funcQueueName = funcDef?.queueName;
-      const displayName = this._getDisplayName(refName);
-
-      const effectiveQueueName = queueName || funcQueueName;
-      const { resolvedProps, errorMetadataLines } = await this._resolveExternalProps(
-        this.asyncResolver,
-        'asyncResolver',
-        [refName, effectiveQueueName]
+      return this._buildAsyncWrapper(
+        child,
+        visited,
+        path,
+        (refName, nextVisited, nextPath) => this._resolveFunctionAsLeafOrLoadable(refName, nextVisited, nextPath)
       );
-
-      const finalQueueName = resolvedProps.queueName || queueName || funcQueueName || `${displayName}_queue`;
-      const metadataLines = this._mergeMetadataLines(
-        errorMetadataLines,
-        existingProps.metadata_lines,
-        resolvedProps.metadata_lines
-      );
-
-      return this._applyLogMetadataLine({
-        name: finalQueueName,
-        type: 'timer',
-        ...existingProps,
-        ...resolvedProps,
-        queueName: undefined,
-        ...(metadataLines ? { metadata_lines: metadataLines } : {}),
-        children: [await this._resolveFunctionAsLeafOrLoadable(refName, visited, path)]
-      }, {}, { resolvedProps, resolverName: 'asyncResolver' });
     }
 
     if (child.topicPublish) {
-      const { ref: refName, topicName, topicPublish: _, queueName, ...existingProps } = child;
-      const effectiveTopicName = topicName || 'unknown topic';
-      const { resolvedProps, errorMetadataLines } = await this._resolveExternalProps(
-        this.topicPublishResolver,
-        'topicPublishResolver',
-        [effectiveTopicName, queueName]
-      );
-
-      const finalQueueName = resolvedProps.queueName
-        || queueName
-        || (topicName ? `${topicName}_queue` : 'unknown topic');
-      const metadataLines = this._mergeMetadataLines(
-        errorMetadataLines,
-        existingProps.metadata_lines,
-        resolvedProps.metadata_lines
-      );
-
-      return this._applyLogMetadataLine({
-        name: finalQueueName,
-        type: 'topic',
-        ...existingProps,
-        ...resolvedProps,
-        queueName: undefined,
-        ...(metadataLines ? { metadata_lines: metadataLines } : {})
-      }, {}, { resolvedProps, resolverName: 'topicPublishResolver' });
+      return this._buildTopicPublishNode(child);
     }
 
     if (child.type === 'queue' || child.type === 'timer' || child.type === 'topic') {

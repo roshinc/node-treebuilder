@@ -160,6 +160,29 @@ describe('TreeBuilder lazy loading', () => {
             assert.equal(topicNode.loadChildren, undefined);
         });
 
+        it('should strip resolver queueName from lazy topic wrappers', async () => {
+            builder.setTopicPublishResolver(() => {
+                return { queueName: 'RESOLVED.TOPIC.Q', stage: 'publish' };
+            });
+            builder.defineFunctions({
+                pubFunc: {
+                    children: [topicPublishRef('myEvent', 'EVENT.Q')]
+                }
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [ref('pubFunc')]
+            };
+
+            const tree = await builder.buildLazy(app);
+            const topicNode = tree.children[0].children[0];
+            assert.equal(topicNode.name, 'RESOLVED.TOPIC.Q');
+            assert.equal(topicNode.queueName, undefined);
+            assert.equal(topicNode.stage, 'publish');
+        });
+
         it('should return warning node for unresolved refs', async () => {
             const app = {
                 name: 'test-app',

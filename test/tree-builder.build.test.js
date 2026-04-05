@@ -307,6 +307,26 @@ describe('TreeBuilder', () => {
             assert.equal(tree.children[0].depth, 5);
         });
 
+        it('should preserve resolver queueName on full-build async wrappers', async () => {
+            builder.defineFunctions({
+                asyncFunc: {}
+            });
+
+            builder.setAsyncResolver(() => {
+                return { queueName: 'RESOLVED.QUEUE', depth: 5 };
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{ ref: 'asyncFunc', async: true, queueName: 'ORIGINAL.QUEUE' }]
+            };
+
+            const tree = await builder.build(app);
+            assert.equal(tree.children[0].queueName, 'RESOLVED.QUEUE');
+            assert.equal(tree.children[0].depth, 5);
+        });
+
         it('should keep existing queue values when async resolver returns nothing', async () => {
             builder.defineFunctions({
                 asyncFunc: {}
@@ -413,6 +433,32 @@ describe('TreeBuilder', () => {
             const tree = await builder.build(app);
             assert.equal(tree.children[0].name, 'TOPIC.ORIGINAL.QUEUE');
             assert.equal(tree.children[0].stage, 'publish');
+        });
+
+        it('should merge existing and resolved metadata_lines for topic nodes', async () => {
+            builder.setTopicPublishResolver(() => {
+                return {
+                    queueName: 'TOPIC.RESOLVED.QUEUE',
+                    metadata_lines: [{ text: 'resolved metadata' }]
+                };
+            });
+
+            const app = {
+                name: 'test-app',
+                type: 'app',
+                children: [{
+                    topicName: 'myTopic',
+                    topicPublish: true,
+                    metadata_lines: [{ text: 'existing metadata' }]
+                }]
+            };
+
+            const tree = await builder.build(app);
+            assert.equal(tree.children[0].name, 'TOPIC.RESOLVED.QUEUE');
+            assert.deepEqual(tree.children[0].metadata_lines, [
+                { text: 'existing metadata' },
+                { text: 'resolved metadata' }
+            ]);
         });
 
         it('should log and annotate topic nodes when topic publish resolver throws', async () => {

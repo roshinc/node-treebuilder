@@ -197,63 +197,11 @@ class TreeBuilder extends FunctionResolutionEngine {
     }
 
     if (node.ref && node.async) {
-      const { ref, async: _, queueName, asyncRef: _a, syncRef: _s, topicRef: _t, ...queueProps } = node;
-      const normalizedRef = this._normalizeName(ref);
-      const funcDef = this._getFunctionDefs().get(normalizedRef);
-      const funcQueueName = funcDef?.queueName;
-      const displayName = this._getDisplayName(ref);
-
-      const effectiveQueueName = queueName || funcQueueName;
-      const { resolvedProps, errorMetadataLines } = await this._resolveExternalProps(
-        this.asyncResolver,
-        'asyncResolver',
-        [ref, effectiveQueueName]
-      );
-
-      const finalQueueName = resolvedProps.queueName || queueName || funcQueueName || `${displayName}_queue`;
-      const metadataLines = this._mergeMetadataLines(
-        errorMetadataLines,
-        queueProps.metadata_lines,
-        resolvedProps.metadata_lines
-      );
-
-      return this._applyLogMetadataLine({
-        name: finalQueueName,
-        type: 'timer',
-        ...queueProps,
-        ...resolvedProps,
-        ...wrapperQueueNameProps,
-        ...(metadataLines ? { metadata_lines: metadataLines } : {}),
-        children: [await resolveFunction(ref, visited, path)]
-      }, {}, { resolvedProps, resolverName: 'asyncResolver' });
+      return this._buildAsyncWrapper(node, visited, path, resolveFunction, wrapperQueueNameProps);
     }
 
     if (node.topicPublish) {
-      const { ref, topicName, topicPublish: _, queueName, ...queueProps } = node;
-      const effectiveTopicName = topicName || 'unknown topic';
-      const { resolvedProps, errorMetadataLines } = await this._resolveExternalProps(
-        this.topicPublishResolver,
-        'topicPublishResolver',
-        [effectiveTopicName, queueName]
-      );
-
-      const finalQueueName = resolvedProps.queueName
-        || queueName
-        || (topicName ? `${topicName}_queue` : 'unknown topic');
-      const metadataLines = this._mergeMetadataLines(
-        errorMetadataLines,
-        queueProps.metadata_lines,
-        resolvedProps.metadata_lines
-      );
-
-      return this._applyLogMetadataLine({
-        name: finalQueueName,
-        type: 'topic',
-        ...queueProps,
-        ...resolvedProps,
-        ...wrapperQueueNameProps,
-        ...(metadataLines ? { metadata_lines: metadataLines } : {})
-      }, {}, { resolvedProps, resolverName: 'topicPublishResolver' });
+      return this._buildTopicPublishNode(node, wrapperQueueNameProps);
     }
 
     const { usesLegacyGatewayHttpClient, ctg, ...nodeWithoutFlag } = node;
