@@ -92,11 +92,6 @@ class TreeBuilder extends FunctionResolutionEngine {
     this.inFlightResolutions.clear();
   }
 
-  _invalidateCompiledPools() {
-    this.externalCompiledPool = null;
-    this._invalidateInternalCompiledPool();
-  }
-
   _getActiveCompiledPool() {
     return this.externalCompiledPool || this.internalCompiledPool;
   }
@@ -131,7 +126,7 @@ class TreeBuilder extends FunctionResolutionEngine {
     const normalizedName = this._normalizeName(name);
     const propsWithDisplayName = extraProps.displayName ? extraProps : { displayName: name, ...extraProps };
     this.functionDefs.set(normalizedName, { children, ...propsWithDisplayName });
-    this._invalidateCompiledPools();
+    this._invalidateInternalCompiledPool();
     return this;
   }
 
@@ -145,7 +140,7 @@ class TreeBuilder extends FunctionResolutionEngine {
         ...propsWithDisplayName
       });
     }
-    this._invalidateCompiledPools();
+    this._invalidateInternalCompiledPool();
     return this;
   }
 
