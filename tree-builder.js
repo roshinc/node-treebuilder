@@ -122,7 +122,14 @@ class TreeBuilder extends FunctionResolutionEngine {
     return this.internalCompiledPool;
   }
 
+  _assertNoExternalPool(methodName) {
+    if (this.externalCompiledPool) {
+      throw new Error(`Cannot call ${methodName}() while an external compiled pool is attached. Use setCompiledPool() to replace or clear it first.`);
+    }
+  }
+
   defineFunction(name, children = [], extraProps = {}) {
+    this._assertNoExternalPool('defineFunction');
     const normalizedName = this._normalizeName(name);
     const propsWithDisplayName = extraProps.displayName ? extraProps : { displayName: name, ...extraProps };
     this.functionDefs.set(normalizedName, { children, ...propsWithDisplayName });
@@ -131,6 +138,7 @@ class TreeBuilder extends FunctionResolutionEngine {
   }
 
   defineFunctions(defs) {
+    this._assertNoExternalPool('defineFunctions');
     for (const [name, def] of Object.entries(defs)) {
       const { children, ...props } = def;
       const normalizedName = this._normalizeName(name);
