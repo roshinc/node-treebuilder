@@ -125,6 +125,57 @@ describe('compileFunctionPool', () => {
     assert.equal(buildResolverCalls, 0);
   });
 
+  it('should throw when defining a function while constructed with an external compiled pool', async () => {
+    const compiledPool = await compileFunctionPool({
+      existing: {}
+    });
+
+    const builder = new TreeBuilder({ compiledPool });
+
+    assert.throws(
+      () => builder.defineFunction('newFunc'),
+      /Cannot call defineFunction\(\) while an external compiled pool is attached/
+    );
+  });
+
+  it('should throw when defining functions after attaching an external compiled pool', async () => {
+    const compiledPool = await compileFunctionPool({
+      existing: {}
+    });
+
+    const builder = new TreeBuilder();
+    builder.setCompiledPool(compiledPool);
+
+    assert.throws(
+      () => builder.defineFunctions({ newFunc: {} }),
+      /Cannot call defineFunctions\(\) while an external compiled pool is attached/
+    );
+  });
+
+  it('should allow defining functions again after clearing the external compiled pool', async () => {
+    const compiledPool = await compileFunctionPool({
+      existing: {}
+    });
+
+    const builder = new TreeBuilder({ compiledPool });
+    builder.setCompiledPool(null);
+    builder.defineFunctions({
+      localChild: {},
+      localParent: {
+        children: [ref('localChild')]
+      }
+    });
+
+    const tree = await builder.build({
+      name: 'test-app',
+      type: 'app',
+      children: [{ ref: 'localParent' }]
+    });
+
+    assert.equal(tree.children[0].name, 'localParent');
+    assert.equal(tree.children[0].children[0].name, 'localChild');
+  });
+
   it('should produce updated output after recompiling with new resolver behavior', async () => {
     const functionPool = {
       child: {},
