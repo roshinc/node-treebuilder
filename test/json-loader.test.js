@@ -7,6 +7,8 @@ import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
+import { writeFile, unlink, mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import {
     loadFromFile,
     loadFunctionPool,
@@ -87,11 +89,17 @@ describe('JSON Loader', () => {
         });
 
         it('should throw error for invalid JSON', async () => {
-            // Create a test with a path that would have invalid JSON
-            // For now, we'll just verify the function exists and works with valid JSON
-            const configDir = getDefaultConfigDir();
-            const data = await loadFromFile(join(configDir, 'functionPool.json'));
-            assert.ok(data);
+            const dir = await mkdtemp(join(tmpdir(), 'json-loader-test-'));
+            const badPath = join(dir, 'invalid.json');
+            await writeFile(badPath, '{ this is not: valid json,', 'utf8');
+            try {
+                await assert.rejects(
+                    loadFromFile(badPath),
+                    (err) => err instanceof SyntaxError
+                );
+            } finally {
+                await unlink(badPath);
+            }
         });
     });
 
