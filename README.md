@@ -483,6 +483,37 @@ const expanded = await builder.buildLazyFrom('parentFunc');
 - The lazy API does not populate the internal `resolvedFunctions` cache — each call is self-contained
 - All lookups are case-insensitive, consistent with `build()`
 
+### Built Tree Lazy View
+
+If you already have the output from `build()`, you can derive lazy-style responses from that built tree without rebuilding from the function pool:
+
+```javascript
+import { TreeBuilder, ref } from './tree-builder.js';
+import { prepareBuiltTree, get, getFrom } from './built-tree-lazy.js';
+
+const builder = new TreeBuilder();
+builder.defineFunctions({
+    child: {},
+    parent: { children: [ref('child')] }
+});
+
+const fullTree = await builder.build({
+    name: 'my-app',
+    type: 'app',
+    children: [ref('parent')]
+});
+
+const preparedTree = prepareBuiltTree(fullTree);
+const initialLazyTree = get(preparedTree);
+
+const parentId = initialLazyTree.children[0]._nodeId;
+const expandedParent = getFrom(preparedTree, parentId);
+```
+
+- `prepareBuiltTree(fullTree)` clones the full tree and adds `_nodeId` / `_parentNodeId`
+- `get(preparedTree)` returns the same shallow shape as `buildLazy(...)`
+- `getFrom(preparedTree, nodeId)` expands the exact node occurrence identified by `nodeId`
+
 ### JSON Loader
 
 ```javascript
@@ -520,7 +551,7 @@ node example-json.js
 npm test
 ```
 
-Runs 192 unit tests covering TreeBuilder, lazy loading, and JSON loader functionality.
+Runs 233 unit tests covering TreeBuilder, lazy loading, built-tree lazy projection, and JSON loader functionality.
 
 ## License
 
